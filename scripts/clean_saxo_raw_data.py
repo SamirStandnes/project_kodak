@@ -4,12 +4,12 @@ import re
 import uuid
 import numpy as np
 
-def clean_saxo_transactions_to_schema(input_file_path, output_file_path):
+def clean_saxo_transactions_to_schema(input_file_path, output_file_path=None, sheet_name='Transaksjoner'):
     print(f"Processing '{os.path.basename(input_file_path)}' with final logic...")
     
-    df = pd.read_excel(input_file_path, sheet_name='Transaksjoner')
+    df = pd.read_excel(input_file_path, sheet_name=sheet_name)
 
-    column_mapping = {
+    mapping_no = {
         'Kunde-ID': 'AccountID',
         'Handelsdato': 'TradeDate',
         'Valuteringsdato': 'SettlementDate',
@@ -20,9 +20,32 @@ def clean_saxo_transactions_to_schema(input_file_path, output_file_path):
         'Bokført beløp': 'Amount_Base_Raw', # This is always NOK
         'Omregningskurs': 'ExchangeRate'
     }
+    
+    mapping_en = {
+        'Client ID': 'AccountID',
+        'Trade Date': 'TradeDate',
+        'Value Date': 'SettlementDate',
+        'Instrument ISIN': 'ISIN',
+        'Instrument': 'Symbol',
+        'Type': 'SaxoTransactionType',
+        'Event': 'SaxoEventText',
+        'Booked Amount': 'Amount_Base_Raw', # This is always NOK
+        'Conversion Rate': 'ExchangeRate'
+    }
+
+    if 'Kunde-ID' in df.columns:
+        column_mapping = mapping_no
+    else:
+        column_mapping = mapping_en
+    
     df = df.rename(columns=column_mapping)
     
     df = df.dropna(subset=['AccountID', 'TradeDate']).copy()
+
+    if output_file_path is None:
+        # If no output path is given, generate it from the account ID
+        account_id = df['AccountID'].iloc[0]
+        output_file_path = f'data/processed/saxo_cleaned_{account_id}.xlsx'
     df['Source'] = 'SAXO'
 
     df['TradeDate'] = pd.to_datetime(df['TradeDate'], errors='coerce')
@@ -137,8 +160,7 @@ def clean_saxo_transactions_to_schema(input_file_path, output_file_path):
     print(df_out.head(15).to_markdown(index=False))
 
 if __name__ == "__main__":
-    saxo_transactions_file = {
-        'input_file': r"C:\Users\Samir\project-kodak\data\Transactions_19269921_2024-11-07_2025-12-11.xlsx",
-        'output_file': 'saxo_transactions_schema.xlsx'
-    }
-    clean_saxo_transactions_to_schema(saxo_transactions_file['input_file'], saxo_transactions_file['output_file'])
+    # This is for standalone execution from the project root.
+    input_file = 'data/raw/Transactions_19269921_2024-11-07_2025-12-11.xlsx'
+    # The output path will be generated automatically by the function.
+    clean_saxo_transactions_to_schema(input_file, sheet_name='Transaksjoner')
