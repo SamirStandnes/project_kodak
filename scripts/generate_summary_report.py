@@ -1,0 +1,334 @@
+import sqlite3
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, timedelta
+from collections import deque
+import pyxirr
+
+# --- Exchange Rate Functions ---
+
+# Cache for latest exchange rates to avoid re-fetching
+latest_rates_cache = {}
+
+def get_latest_exchange_rate(base_currency, target_currency='NOK'):
+    """
+    Gets the latest exchange rate between two currencies.
+    """
+    if base_currency == target_currency:
+        return 1.0
+    
+    # Special handling for HKD
+    if base_currency == 'HKD' and target_currency == 'NOK':
+        usd_nok_rate = get_latest_exchange_rate('USD', 'NOK')
+        hkd_usd_rate = get_latest_exchange_rate('HKD', 'USD')
+        if usd_nok_rate and hkd_usd_rate:
+            return usd_nok_rate * hkd_usd_rate
+        else:
+            return None
+
+    ticker = f"{base_currency}{target_currency}=X"
+    if ticker in latest_rates_cache:
+        return latest_rates_cache[ticker]
+
+    try:
+        rate_data = yf.Ticker(ticker).history(period="1d")
+        if not rate_data.empty:
+            rate = rate_data['Close'].iloc[0]
+            latest_rates_cache[ticker] = rate
+            return rate
+        else:
+            print(f"Warning: Could not fetch latest exchange rate for {ticker}")
+            return None
+    except Exception as e:
+        print(f"Warning: Error fetching latest rate for {ticker}: {e}")
+        return None
+
+# --- WAC & XIRR Calculation Functions ---
+
+def calculate_consolidated_average_wac(conn, isin):
+    """
+    Calculates the Average WAC in NOK for a given ISIN across all accounts.
+    """
+    c = conn.cursor()
+    c.execute('''
+        SELECT Quantity, Price, ExchangeRate, Currency_Local
+        FROM transactions
+        WHERE ISIN = ? AND Type IN ('BUY', 'TRANSFER_IN') AND Quantity > 0
+    ''', (isin,))
+    
+    transactions = c.fetchall()
+    
+    total_cost_nok = 0
+    total_quantity = 0
+
+    for quantity, price, exchange_rate_str, currency_local in transactions:
+        cost_nok = 0
+        if currency_local == 'NOK':
+            cost_nok = quantity * price
+        elif exchange_rate_str is not None:
+            try:
+                exchange_rate = float(str(exchange_rate_str).replace(',', '.'))
+                if exchange_rate != 0:
+                    cost_nok = quantity * price * exchange_rate
+            except (ValueError, AttributeError):
+                pass 
+
+        total_cost_nok += cost_nok
+        total_quantity += quantity
+
+    if total_quantity > 0:
+        return total_cost_nok / total_quantity
+    return 0
+
+def calculate_consolidated_fifo_wac(conn, isin):
+    """
+    Calculates the FIFO WAC in NOK for a given ISIN across all accounts.
+    """
+    c = conn.cursor()
+    # Fetch all relevant transactions, ordered by date
+    c.execute('''
+        SELECT Quantity, Price, ExchangeRate, Currency_Local, Type, TradeDate
+        FROM transactions
+        WHERE ISIN = ? AND Type IN ('BUY', 'SELL', 'TRANSFER_IN', 'TRANSFER_OUT')
+        ORDER BY TradeDate, GlobalID
+    ''', (isin,))
+    
+    transactions = c.fetchall()
+    
+    buy_lots = deque() # Use a deque to efficiently remove from the front (FIFO)
+
+    for quantity, price, exchange_rate_str, currency_local, trans_type, trade_date in transactions:
+        
+        if trans_type in ('BUY', 'TRANSFER_IN'):
+            cost_nok = 0
+            if currency_local == 'NOK':
+                cost_nok = quantity * price
+            elif exchange_rate_str is not None:
+                try:
+                    exchange_rate = float(str(exchange_rate_str).replace(',', '.'))
+                    if exchange_rate != 0:
+                        cost_nok = quantity * price * exchange_rate
+                except (ValueError, AttributeError):
+                    pass # Keep cost_nok as 0 if rate is invalid
+            
+            buy_lots.append({'quantity': quantity, 'cost_per_share_nok': cost_nok / quantity if quantity > 0 else 0})
+
+        elif trans_type in ('SELL', 'TRANSFER_OUT'):
+            sell_quantity = abs(quantity)
+            
+            while sell_quantity > 0 and buy_lots:
+                oldest_lot = buy_lots[0]
+                
+                if oldest_lot['quantity'] <= sell_quantity:
+                    # This lot is completely sold
+                    sell_quantity -= oldest_lot['quantity']
+                    buy_lots.popleft()
+                else:
+                    # This lot is partially sold
+                    oldest_lot['quantity'] -= sell_quantity
+                    sell_quantity = 0
+
+    # Calculate WAC from the remaining lots
+    total_cost_nok = 0
+    total_quantity = 0
+    for lot in buy_lots:
+        total_cost_nok += lot['quantity'] * lot['cost_per_share_nok']
+        total_quantity += lot['quantity']
+
+    if total_quantity > 0:
+        return total_cost_nok / total_quantity
+    return 0
+
+def calculate_xirr(conn, total_market_value):
+    """
+    Calculates the XIRR (annualized return) of the entire portfolio.
+    """
+    c = conn.cursor()
+    # Get all cashflow-related transactions
+    c.execute('''
+        SELECT TradeDate, Type, Amount_Base
+        FROM transactions
+        WHERE Type IN ('DEPOSIT', 'WITHDRAWAL', 'BUY', 'SELL', 'FEE', 'DIVIDEND')
+    ''')
+    
+    transactions = c.fetchall()
+    
+    dates = []
+    values = []
+
+    for trade_date, trans_type, amount_base in transactions:
+        if amount_base is not None:
+            dates.append(pd.to_datetime(trade_date).date())
+            if trans_type in ('WITHDRAWAL', 'FEE') and amount_base > 0:
+                values.append(-amount_base)
+            else:
+                values.append(amount_base)
+
+    # Add the current market value as the final cashflow
+    dates.append(datetime.today().date())
+    values.append(total_market_value)
+    
+    valid_dates = []
+    valid_values = []
+    for d, v in zip(dates, values):
+        if pd.notna(d) and pd.notna(v):
+            valid_dates.append(d)
+            valid_values.append(v)
+
+    if len(valid_dates) < 2:
+        return 0
+
+    try:
+        return pyxirr.xirr(valid_dates, valid_values)
+    except Exception as e:
+        print(f"\nCould not calculate Annualized Return (XIRR): {e}")
+        return 0
+
+# --- Main Report Generation ---
+
+def generate_summary_report():
+    """
+    Generates and prints a consolidated portfolio summary report.
+    """
+    db_file = 'database/portfolio.db'
+    conn = sqlite3.connect(db_file)
+    c = conn.cursor()
+
+    # Get current consolidated holdings
+    c.execute('''
+        SELECT ISIN, SUM(Quantity) as Quantity
+        FROM transactions
+        WHERE ISIN IS NOT NULL
+        GROUP BY ISIN
+        HAVING SUM(Quantity) > 0
+    ''')
+    holdings = c.fetchall()
+
+    portfolio_data = []
+    unpriced_securities = []
+
+    # Pre-fetch latest exchange rates
+    all_currencies = pd.read_sql_query("SELECT DISTINCT Currency FROM isin_symbol_map", conn)['Currency'].tolist()
+    print("Fetching latest exchange rates...")
+    for currency in all_currencies:
+        if currency:
+            get_latest_exchange_rate(currency)
+    print("Exchange rate fetching complete.")
+
+    for isin, quantity in holdings:
+        # Get symbol and currency
+        c.execute('SELECT Symbol, Currency FROM isin_symbol_map WHERE ISIN = ?', (isin,))
+        mapping_result = c.fetchone()
+        symbol = mapping_result[0] if mapping_result else 'N/A'
+        security_currency = mapping_result[1] if mapping_result else None
+
+        # Calculate WACs
+        avg_wac_nok = calculate_consolidated_average_wac(conn, isin)
+        fifo_wac_nok = calculate_consolidated_fifo_wac(conn, isin)
+
+        # Get current price
+        c.execute('SELECT Price FROM current_prices WHERE ISIN = ?', (isin,))
+        price_result = c.fetchone()
+        price_local = price_result[0] if price_result else 0
+        
+        price_nok = 0
+        if price_local > 0 and security_currency:
+            latest_rate = get_latest_exchange_rate(security_currency)
+            if latest_rate:
+                price_nok = price_local * latest_rate
+        
+        if price_nok == 0:
+            unpriced_securities.append(f"{symbol} ({isin})")
+
+        # Calculations
+        avg_cost_basis = avg_wac_nok * quantity
+        fifo_cost_basis = fifo_wac_nok * quantity
+        market_value = price_nok * quantity
+        
+        avg_gain_loss = market_value - avg_cost_basis
+        avg_return_pct = (avg_gain_loss / avg_cost_basis) * 100 if avg_cost_basis > 0 else 0
+        
+        fifo_gain_loss = market_value - fifo_cost_basis
+        fifo_return_pct = (fifo_gain_loss / fifo_cost_basis) * 100 if fifo_cost_basis > 0 else 0
+
+        portfolio_data.append({
+            "Symbol": symbol,
+            "Quantity": quantity,
+            "AvgWAC_NOK": avg_wac_nok,
+            "FIFOWAC_NOK": fifo_wac_nok,
+            "MarketValue_NOK": market_value,
+            "AvgReturn": avg_return_pct,
+            "FIFOReturn": fifo_return_pct,
+            "AvgCostBasis_NOK": avg_cost_basis,
+            "FIFOCostBasis_NOK": fifo_cost_basis,
+        })
+
+    # Calculate Total Fees
+    c.execute("SELECT SUM(Amount_Base) FROM transactions WHERE Type = 'FEE'")
+    total_fees_result = c.fetchone()
+    total_fees = abs(total_fees_result[0]) if total_fees_result and total_fees_result[0] is not None else 0
+    
+    conn.close()
+
+    if not portfolio_data:
+        print("No portfolio data to display.")
+        return
+
+    # Create DataFrame and print summary
+    df = pd.DataFrame(portfolio_data)
+    
+    print("\n--- Consolidated Portfolio Positions (all values in NOK) ---")
+    
+    display_cols = ["Symbol", "Quantity", "AvgWAC_NOK", "FIFOWAC_NOK", "MarketValue_NOK", "AvgReturn", "FIFOReturn"]
+    
+    # Format the numbers for better readability
+    df_display = df.copy()
+    for col in ["AvgWAC_NOK", "FIFOWAC_NOK", "MarketValue_NOK"]:
+        df_display[col] = df_display[col].map('{:,.2f}'.format)
+    df_display['AvgReturn'] = df_display['AvgReturn'].map('{:.2f}%'.format)
+    df_display['FIFOReturn'] = df_display['FIFOReturn'].map('{:.2f}%'.format)
+
+    print(df_display[display_cols].to_string(index=False))
+    
+    # --- Summary Lines ---
+    total_market_value = df["MarketValue_NOK"].sum()
+    
+    # Avg Cost Summary
+    total_avg_cost_basis = df["AvgCostBasis_NOK"].sum()
+    total_avg_gain_loss = total_market_value - total_avg_cost_basis
+    total_avg_return_pct = (total_avg_gain_loss / total_avg_cost_basis) * 100 if total_avg_cost_basis > 0 else 0
+
+    # FIFO Summary
+    total_fifo_cost_basis = df["FIFOCostBasis_NOK"].sum()
+    total_fifo_gain_loss = total_market_value - total_fifo_cost_basis
+    total_fifo_return_pct = (total_fifo_gain_loss / total_fifo_cost_basis) * 100 if total_fifo_cost_basis > 0 else 0
+
+    # Calculate Annualized Return (XIRR)
+    conn = sqlite3.connect(db_file)
+    annualized_return = calculate_xirr(conn, total_market_value)
+    conn.close()
+
+    print("\n\n--- Portfolio Summary (in NOK) ---")
+    print(f"Total Market Value: {total_market_value:,.2f} NOK")
+    print("\n--- Based on Average Cost ---")
+    print(f"  Cost Basis: {total_avg_cost_basis:,.2f} NOK")
+    print(f"  Gain/Loss: {total_avg_gain_loss:,.2f} NOK")
+    print(f"  Return: {total_avg_return_pct:.2f}%")
+    
+    print("\n--- Based on FIFO (Broker/Tax) ---")
+    print(f"  Cost Basis: {total_fifo_cost_basis:,.2f} NOK")
+    print(f"  Gain/Loss: {total_fifo_gain_loss:,.2f} NOK")
+    print(f"  Return: {total_fifo_return_pct:.2f}%")
+
+    print("\n--- Other Information ---")
+    print(f"Total Fees Paid: {total_fees:,.2f} NOK")
+    if annualized_return is not None:
+        print(f"Annualized Return (XIRR): {annualized_return:.2%}")
+
+    if unpriced_securities:
+        print("\n\n--- Securities Without a Current Price ---")
+        for item in unpriced_securities:
+            print(f"- {item}")
+
+if __name__ == '__main__':
+    generate_summary_report()
