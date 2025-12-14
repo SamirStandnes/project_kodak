@@ -276,6 +276,9 @@ def generate_summary_report():
 
     # Create DataFrame and print summary
     df = pd.DataFrame(portfolio_data)
+
+    # Sort by MarketValue_NOK in descending order
+    df = df.sort_values(by="MarketValue_NOK", ascending=False).reset_index(drop=True)
     
     print("\n--- Consolidated Portfolio Positions (all values in NOK) ---")
     

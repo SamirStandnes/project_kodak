@@ -1,48 +1,8 @@
 import sqlite3
 import pandas as pd
-import yfinance as yf
-from datetime import datetime, timedelta
 from collections import deque
-
-# --- Exchange Rate Functions ---
-
-# Cache for latest exchange rates to avoid re-fetching
-latest_rates_cache = {}
-
-def get_latest_exchange_rate(base_currency, target_currency='NOK'):
-    """
-    Gets the latest exchange rate between two currencies.
-    Uses a cache to avoid repeated API calls for the same currency pair.
-    Handles HKD conversion via USD cross-rate.
-    """
-    if base_currency == target_currency:
-        return 1.0
-    
-    # Special handling for HKD
-    if base_currency == 'HKD' and target_currency == 'NOK':
-        usd_nok_rate = get_latest_exchange_rate('USD', 'NOK')
-        hkd_usd_rate = get_latest_exchange_rate('HKD', 'USD')
-        if usd_nok_rate and hkd_usd_rate:
-            return usd_nok_rate * hkd_usd_rate
-        else:
-            return None
-
-    ticker = f"{base_currency}{target_currency}=X"
-    if ticker in latest_rates_cache:
-        return latest_rates_cache[ticker]
-
-    try:
-        rate_data = yf.Ticker(ticker).history(period="1d")
-        if not rate_data.empty:
-            rate = rate_data['Close'].iloc[0]
-            latest_rates_cache[ticker] = rate
-            return rate
-        else:
-            print(f"Warning: Could not fetch latest exchange rate for {ticker}")
-            return None
-    except Exception as e:
-        print(f"Warning: Error fetching latest rate for {ticker}: {e}")
-        return None
+# We will need this for the *current* market value, but not for historical costs
+from scripts.pipeline.utils import get_exchange_rate 
 
 # --- WAC Calculation ---
 
@@ -53,7 +13,7 @@ def calculate_average_wac_in_nok(conn, isin, account_id):
     """
     c = conn.cursor()
     c.execute('''
-        SELECT Quantity, Price, ExchangeRate, Currency_Local
+        SELECT Quantity, Price, ExchangeRate, Currency_Local, TradeDate
         FROM transactions
         WHERE ISIN = ? 
         AND AccountID = ?
@@ -66,20 +26,20 @@ def calculate_average_wac_in_nok(conn, isin, account_id):
     total_cost_nok = 0
     total_quantity = 0
 
-    for quantity, price, exchange_rate_str, currency_local in transactions:
+    for quantity, price, exchange_rate_str, currency_local, trade_date in transactions:
         cost_nok = 0
         if currency_local == 'NOK':
             cost_nok = quantity * price
         elif exchange_rate_str is not None:
             try:
-                # Convert comma-separated string to float
                 exchange_rate = float(str(exchange_rate_str).replace(',', '.'))
                 if exchange_rate != 0:
                     cost_nok = quantity * price * exchange_rate
             except (ValueError, AttributeError):
-                 print(f"Warning: Could not parse exchange rate '{exchange_rate_str}' for a transaction in {isin}. Cost will be 0.")
+                 print(f"Warning: Could not parse exchange rate '{exchange_rate_str}' for a transaction in {isin} on {trade_date}. Cost will be 0.")
         else:
-            print(f"Warning: Missing exchange rate for a foreign currency transaction in {isin}. This transaction's cost will be 0.")
+            # This case should no longer happen if the enrichment script has been run.
+            print(f"Warning: Exchange rate is missing for a foreign currency transaction in {isin} on {trade_date}. Cost will be 0.")
 
         total_cost_nok += cost_nok
         total_quantity += quantity
@@ -119,7 +79,10 @@ def calculate_fifo_wac_in_nok(conn, isin, account_id):
                     if exchange_rate != 0:
                         cost_nok = quantity * price * exchange_rate
                 except (ValueError, AttributeError):
-                    pass # Keep cost_nok as 0 if rate is invalid
+                    print(f"Warning: Could not parse exchange rate '{exchange_rate_str}' for a transaction in {isin} on {trade_date}. Cost will be 0.")
+            else:
+                # This case should no longer happen if the enrichment script has been run.
+                print(f"Warning: Exchange rate is missing for a foreign currency transaction in {isin} on {trade_date}. Cost will be 0.")
             
             buy_lots.append({'quantity': quantity, 'cost_nok': cost_nok})
 
@@ -173,15 +136,6 @@ def generate_portfolio_report():
     portfolio_data = []
     unpriced_securities = []
     
-    # Pre-fetch latest exchange rates for all unique currencies
-    all_currencies = pd.read_sql_query("SELECT DISTINCT Currency FROM isin_symbol_map", conn)['Currency'].tolist()
-    print("Fetching latest exchange rates...")
-    for currency in all_currencies:
-        if currency:
-            get_latest_exchange_rate(currency)
-    print("Exchange rate fetching complete.")
-
-
     for account_id, isin, quantity in holdings:
         # Get symbol and currency
         c.execute('SELECT Symbol, Currency FROM isin_symbol_map WHERE ISIN = ?', (isin,))
@@ -200,7 +154,7 @@ def generate_portfolio_report():
         
         price_nok = 0
         if price_local > 0 and security_currency:
-            latest_rate = get_latest_exchange_rate(security_currency)
+            latest_rate = get_exchange_rate(security_currency) # Use the new function
             if latest_rate:
                 price_nok = price_local * latest_rate
         
