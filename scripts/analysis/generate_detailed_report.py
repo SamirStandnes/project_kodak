@@ -17,7 +17,7 @@ def calculate_average_wac_in_nok(conn, isin, account_id):
         FROM transactions
         WHERE ISIN = ? 
         AND AccountID = ?
-        AND Type IN ('BUY', 'TRANSFER_IN') 
+        AND Type IN ('BUY', 'TRANSFER_IN', 'STOCK_SPLIT') 
         AND Quantity > 0
     ''', (isin, account_id))
     
@@ -59,7 +59,7 @@ def calculate_fifo_wac_in_nok(conn, isin, account_id):
         FROM transactions
         WHERE ISIN = ? 
         AND AccountID = ?
-        AND Type IN ('BUY', 'SELL', 'TRANSFER_IN', 'TRANSFER_OUT')
+        AND Type IN ('BUY', 'SELL', 'TRANSFER_IN', 'TRANSFER_OUT', 'STOCK_SPLIT')
         ORDER BY TradeDate, GlobalID
     ''', (isin, account_id))
     
@@ -69,7 +69,7 @@ def calculate_fifo_wac_in_nok(conn, isin, account_id):
 
     for quantity, price, exchange_rate_str, currency_local, trans_type, trade_date in transactions:
         
-        if trans_type in ('BUY', 'TRANSFER_IN'):
+        if trans_type in ('BUY', 'TRANSFER_IN', 'STOCK_SPLIT'):
             cost_nok = 0
             if currency_local == 'NOK':
                 cost_nok = quantity * price

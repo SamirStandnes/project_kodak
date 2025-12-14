@@ -53,7 +53,7 @@ def calculate_consolidated_average_wac(conn, isin):
     c.execute('''
         SELECT Quantity, Price, ExchangeRate, Currency_Local
         FROM transactions
-        WHERE ISIN = ? AND Type IN ('BUY', 'TRANSFER_IN') AND Quantity > 0
+        WHERE ISIN = ? AND Type IN ('BUY', 'TRANSFER_IN', 'STOCK_SPLIT') AND Quantity > 0
     ''', (isin,))
     
     transactions = c.fetchall()
@@ -89,7 +89,7 @@ def calculate_consolidated_fifo_wac(conn, isin):
     c.execute('''
         SELECT Quantity, Price, ExchangeRate, Currency_Local, Type, TradeDate
         FROM transactions
-        WHERE ISIN = ? AND Type IN ('BUY', 'SELL', 'TRANSFER_IN', 'TRANSFER_OUT')
+        WHERE ISIN = ? AND Type IN ('BUY', 'SELL', 'TRANSFER_IN', 'TRANSFER_OUT', 'STOCK_SPLIT')
         ORDER BY TradeDate, GlobalID
     ''', (isin,))
     
@@ -99,7 +99,7 @@ def calculate_consolidated_fifo_wac(conn, isin):
 
     for quantity, price, exchange_rate_str, currency_local, trans_type, trade_date in transactions:
         
-        if trans_type in ('BUY', 'TRANSFER_IN'):
+        if trans_type in ('BUY', 'TRANSFER_IN', 'STOCK_SPLIT'):
             cost_nok = 0
             if currency_local == 'NOK':
                 cost_nok = quantity * price
@@ -267,6 +267,17 @@ def generate_summary_report():
     c.execute("SELECT SUM(Amount_Base) FROM transactions WHERE Type = 'FEE'")
     total_fees_result = c.fetchone()
     total_fees = abs(total_fees_result[0]) if total_fees_result and total_fees_result[0] is not None else 0
+
+    # Calculate Total Dividends
+    c.execute("SELECT SUM(Amount_Base) FROM transactions WHERE Type = 'DIVIDEND'")
+    total_dividends_result = c.fetchone()
+    total_dividends = total_dividends_result[0] if total_dividends_result and total_dividends_result[0] is not None else 0
+
+    # Calculate Total Interest Paid
+    c.execute("SELECT SUM(Amount_Base) FROM transactions WHERE Type = 'INTEREST'")
+    total_interest_result = c.fetchone()
+    # Interest paid might be negative, so we take the absolute value if we want to show it as a positive outflow
+    total_interest_paid = abs(total_interest_result[0]) if total_interest_result and total_interest_result[0] is not None else 0
     
     conn.close()
 
@@ -279,6 +290,9 @@ def generate_summary_report():
 
     # Sort by MarketValue_NOK in descending order
     df = df.sort_values(by="MarketValue_NOK", ascending=False).reset_index(drop=True)
+
+    # Filter out securities with a market value of 0 or less
+    df = df[df["MarketValue_NOK"] > 0]
     
     print("\n--- Consolidated Portfolio Positions (all values in NOK) ---")
     
@@ -286,8 +300,9 @@ def generate_summary_report():
     
     # Format the numbers for better readability
     df_display = df.copy()
+    df_display['Quantity'] = df_display['Quantity'].map('{:,.0f}'.format)
     for col in ["AvgWAC_NOK", "FIFOWAC_NOK", "MarketValue_NOK"]:
-        df_display[col] = df_display[col].map('{:,.2f}'.format)
+        df_display[col] = df_display[col].map('{:,.0f}'.format)
     df_display['AvgReturn'] = df_display['AvgReturn'].map('{:.2f}%'.format)
     df_display['FIFOReturn'] = df_display['FIFOReturn'].map('{:.2f}%'.format)
 
@@ -312,19 +327,21 @@ def generate_summary_report():
     conn.close()
 
     print("\n\n--- Portfolio Summary (in NOK) ---")
-    print(f"Total Market Value: {total_market_value:,.2f} NOK")
+    print(f"Total Market Value: {total_market_value:,.0f} NOK")
     print("\n--- Based on Average Cost ---")
-    print(f"  Cost Basis: {total_avg_cost_basis:,.2f} NOK")
-    print(f"  Gain/Loss: {total_avg_gain_loss:,.2f} NOK")
+    print(f"  Cost Basis: {total_avg_cost_basis:,.0f} NOK")
+    print(f"  Gain/Loss: {total_avg_gain_loss:,.0f} NOK")
     print(f"  Return: {total_avg_return_pct:.2f}%")
     
     print("\n--- Based on FIFO (Broker/Tax) ---")
-    print(f"  Cost Basis: {total_fifo_cost_basis:,.2f} NOK")
-    print(f"  Gain/Loss: {total_fifo_gain_loss:,.2f} NOK")
+    print(f"  Cost Basis: {total_fifo_cost_basis:,.0f} NOK")
+    print(f"  Gain/Loss: {total_fifo_gain_loss:,.0f} NOK")
     print(f"  Return: {total_fifo_return_pct:.2f}%")
 
     print("\n--- Other Information ---")
-    print(f"Total Fees Paid: {total_fees:,.2f} NOK")
+    print(f"Total Fees Paid: {total_fees:,.0f} NOK")
+    print(f"Total Dividends: {total_dividends:,.0f} NOK")
+    print(f"Total Interest Paid: {total_interest_paid:,.0f} NOK")
     if annualized_return is not None:
         print(f"Annualized Return (XIRR): {annualized_return:.2%}")
 
