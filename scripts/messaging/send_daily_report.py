@@ -39,6 +39,19 @@ def load_config():
 def create_html_body(df, summary_data, unpriced):
     """Creates a styled HTML string from the portfolio data."""
 
+    # --- Helper for breakdown tables ---
+    def _create_breakdown_table(df, group_by_col, title):
+        if group_by_col not in df.columns or df[group_by_col].isnull().all():
+            return ""
+        
+        breakdown = df.groupby(group_by_col)['Weight'].sum().reset_index()
+        breakdown = breakdown.sort_values(by='Weight', ascending=False)
+        breakdown['Weight'] = breakdown['Weight'].map('{:.2%}'.format)
+        
+        html = f"<h3>{title}</h3>"
+        html += breakdown.to_html(index=False, border=0, classes='summary-table', escape=False)
+        return html
+
     # --- CSS Styling ---
     html_style = """
     <style>
@@ -46,9 +59,12 @@ def create_html_body(df, summary_data, unpriced):
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             margin: 20px;
             color: #333;
+            background-color: #fdfdfd;
         }
         h1, h2, h3 {
             color: #2c3e50;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 5px;
         }
         .portfolio-table {
             border-collapse: collapse;
@@ -70,10 +86,20 @@ def create_html_body(df, summary_data, unpriced):
         .portfolio-table tbody tr:nth-child(even) {
             background-color: #f9f9f9;
         }
+        .summary-container {
+            /* This container is now just a simple wrapper */
+        }
         .summary-table {
             width: 50%;
+            min-width: 400px;
             border-collapse: collapse;
             font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .summary-table th {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #ccc;
         }
         .summary-table td {
             padding: 8px;
@@ -107,10 +133,14 @@ def create_html_body(df, summary_data, unpriced):
     # --- Data Formatting ---
     df_html = df.copy()
     
+    df_html['Quantity'] = df_html['Quantity'].map('{:,.0f}'.format)
+    
     # Define columns to format
     money_cols = ['AvgWAC_NOK', 'FIFOWAC_NOK', 'MarketValue_NOK']
     pct_cols = ['AvgReturn_pct', 'FIFOReturn_pct']
     
+    df_html['Weight'] = df_html['Weight'].map('{:.2%}'.format)
+
     for col in money_cols:
         df_html[col] = df_html[col].map('{:,.0f}'.format)
     
@@ -119,16 +149,17 @@ def create_html_body(df, summary_data, unpriced):
 
     df_html.rename(columns={
         "Symbol": "Symbol", 
-        "Quantity": "Quantity", 
+        "Quantity": "Qty", 
+        "Weight": "Weight",
         "AvgWAC_NOK": "Avg. Cost", 
         "FIFOWAC_NOK": "FIFO Cost", 
-        "MarketValue_NOK": "Market Value (NOK)", 
-        "AvgReturn_pct": "Return % (Avg)", 
-        "FIFOReturn_pct": "Return % (FIFO)"
+        "MarketValue_NOK": "Market Value", 
+        "AvgReturn_pct": "Return (Avg)", 
+        "FIFOReturn_pct": "Return (FIFO)"
     }, inplace=True)
     
     # Keep only relevant columns for display
-    display_cols = ["Symbol", "Quantity", "Avg. Cost", "FIFO Cost", "Market Value (NOK)", "Return % (Avg)", "Return % (FIFO)"]
+    display_cols = ["Symbol", "Qty", "Weight", "Avg. Cost", "FIFO Cost", "Market Value", "Return (Avg)", "Return (FIFO)"]
     
     # --- HTML Structure ---
     html = f"""
@@ -142,20 +173,26 @@ def create_html_body(df, summary_data, unpriced):
         <h1>Portfolio Report</h1>
         <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
         
-        <h2>Positions</h2>
+        <h2>Positions (NOK)</h2>
         {df_html[display_cols].to_html(index=False, border=0, classes='portfolio-table', escape=False)}
         
-        <h2>Summary (NOK)</h2>
-        <table class="summary-table">
-            <tr><td>Total Market Value</td><td>{summary_data['total_market_value']:,.0f}</td></tr>
-            <tr><td>Total Gain/Loss (Economic)</td><td class="{'positive' if summary_data['total_avg_gain_loss'] >= 0 else 'negative'}">{summary_data['total_avg_gain_loss']:,.0f}</td></tr>
-            <tr><td>Total Return (Economic)</td><td class="{'positive' if summary_data['total_avg_return_pct'] >= 0 else 'negative'}">{summary_data['total_avg_return_pct']:.2f}%</td></tr>
-            <tr><td>Total Gain/Loss (FIFO)</td><td class="{'positive' if summary_data['total_fifo_gain_loss'] >= 0 else 'negative'}">{summary_data['total_fifo_gain_loss']:,.0f}</td></tr>
-            <tr><td>Total Return (FIFO)</td><td class="{'positive' if summary_data['total_fifo_return_pct'] >= 0 else 'negative'}">{summary_data['total_fifo_return_pct']:.2f}%</td></tr>
-            <tr><td>Total Dividends</td><td>{summary_data['total_dividends']:,.0f}</td></tr>
-            <tr><td>Total Fees</td><td>{summary_data['total_fees']:,.0f}</td></tr>
-            <tr><td>Total Interest Paid</td><td>{summary_data['total_interest_paid']:,.0f}</td></tr>
-        </table>
+        <div class="summary-container">
+            <h2>Summary</h2>
+            <table class="summary-table">
+                <tr><td>Market Value</td><td>{summary_data['total_market_value']:,.0f}</td></tr>
+                <tr><td>Gain/Loss (Economic)</td><td class="{'positive' if summary_data['total_avg_gain_loss'] >= 0 else 'negative'}">{summary_data['total_avg_gain_loss']:,.0f}</td></tr>
+                <tr><td>Return (Economic)</td><td class="{'positive' if summary_data['total_avg_return_pct'] >= 0 else 'negative'}">{summary_data['total_avg_return_pct']:.2f}%</td></tr>
+                <tr><td>Gain/Loss (FIFO)</td><td class="{'positive' if summary_data['total_fifo_gain_loss'] >= 0 else 'negative'}">{summary_data['total_fifo_gain_loss']:,.0f}</td></tr>
+                <tr><td>Return (FIFO)</td><td class="{'positive' if summary_data['total_fifo_return_pct'] >= 0 else 'negative'}">{summary_data['total_fifo_return_pct']:.2f}%</td></tr>
+                <tr><td>Dividends</td><td>{summary_data['total_dividends']:,.0f}</td></tr>
+                <tr><td>Fees</td><td>{summary_data['total_fees']:,.0f}</td></tr>
+                <tr><td>Interest Paid</td><td>{summary_data['total_interest_paid']:,.0f}</td></tr>
+            </table>
+
+            {_create_breakdown_table(df, 'Sector', 'Sector Allocation')}
+            {_create_breakdown_table(df, 'Region', 'Region Allocation')}
+            {_create_breakdown_table(df, 'Country', 'Country Allocation')}
+        </div>
     """
 
     if unpriced:

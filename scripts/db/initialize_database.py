@@ -37,7 +37,10 @@ def initialize_database():
         CREATE TABLE IF NOT EXISTS isin_symbol_map (
             ISIN TEXT PRIMARY KEY,
             Symbol TEXT NOT NULL,
-            Currency TEXT
+            Currency TEXT,
+            Sector TEXT,
+            Region TEXT,
+            Country TEXT
         )
     ''')
 
