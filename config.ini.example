@@ -1,0 +1,10 @@
+[SMTP]
+SERVER = smtp.gmail.com
+PORT = 587
+USER = your_email@gmail.com
+# For Gmail, this should be an "App Password", not your regular password.
+# See: https://support.google.com/accounts/answer/185833
+PASSWORD = your_app_password
+
+[RECIPIENT]
+EMAIL = your_email@gmail.com

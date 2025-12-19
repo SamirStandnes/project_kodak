@@ -51,3 +51,34 @@ Every transaction in the `transactions` table now includes a `batch_id` column.
 *   Existing historical data is marked with `batch_id = 'historical'`.
 *   New manual entries and file imports receive unique, timestamped `batch_id`s.
 This allows for precise identification and easy reversal of any batch of imported transactions if issues are discovered.
+
+## Key Outputs and Reporting
+
+Project Kodak generates two primary reports from the committed transaction data in `portfolio.db`: an email-based summary and a console-based summary. Both reports leverage the same underlying logic to ensure consistency.
+
+### 1. Daily Email Summary Report
+
+This report provides a high-level overview of your portfolio's performance, formatted as an HTML email.
+
+*   **Script:** `scripts/messaging/send_daily_report.py`
+*   **How to use:**
+    1.  Ensure your SMTP (email server) and recipient email address are configured correctly in `config.ini`.
+    2.  Run `python -m scripts.messaging.send_daily_report`.
+*   **Output:** An HTML email sent to the configured recipient, containing:
+    *   A table of your current holdings with quantities, costs, latest prices, market values, and returns (Avg & FIFO).
+    *   A summary table of overall portfolio metrics (total market value, gains/losses, returns, dividends, fees, XIRR).
+    *   A list of any securities that could not be priced.
+
+### 2. Console Summary Report
+
+This report provides a detailed view of your portfolio directly in your terminal, offering a quick way to review holdings and overall performance without sending an email. It uses rich formatting for enhanced readability.
+
+*   **Script:** `scripts/analysis/generate_summary_report.py`
+*   **How to use:**
+    1.  Run `python -m scripts.analysis.generate_summary_report`.
+*   **Output:** Formatted tables printed to your console, including:
+    *   A table of your current holdings with quantities, costs, latest prices, market values, and returns (Avg & FIFO).
+    *   A summary table of overall portfolio metrics (total market value, gains/losses, returns, dividends, fees, XIRR).
+    *   A list of any securities that could not be priced.
+
+---

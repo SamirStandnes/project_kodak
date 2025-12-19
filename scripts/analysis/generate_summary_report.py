@@ -5,6 +5,20 @@ from datetime import datetime, timedelta
 from collections import deque
 import pyxirr
 
+# --- Date Parsing Helper ---
+def parse_date_flexible(date_string):
+    """
+    Parses a date string that could be in one of several formats.
+    """
+    if not date_string:
+        return None
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(date_string, fmt)
+        except ValueError:
+            continue
+    return None # Return None if no format matches
+
 # --- Exchange Rate and Price Functions ---
 data_cache = {}
 
@@ -130,11 +144,7 @@ def generate_summary_report(verbose=True):
         
         mapping_info = isin_map[isin]
         symbol, security_currency = mapping_info['Symbol'], mapping_info['Currency']
-        sector, region, country = mapping_info.get('Sector'), mapping_info.get('Region'), mapping_info.get('Country')
 
-        avg_wac_nok = calculate_consolidated_average_wac(conn, isin)
-        fifo_wac_nok = calculate_consolidated_fifo_wac(conn, isin)
-        
         price_local = get_historical_price(symbol, datetime.today())
         price_nok = 0
 
@@ -146,30 +156,42 @@ def generate_summary_report(verbose=True):
                 if rate is not None and rate > 0:
                     price_nok = price_local * rate
         
-        if price_nok == 0: unpriced_securities.append(f"{symbol} ({isin})")
-
-        market_value = price_nok * quantity
-        avg_cost_basis = avg_wac_nok * quantity
-        fifo_cost_basis = fifo_wac_nok * quantity
-        
-        portfolio_data.append({
-            "Symbol": symbol, "Quantity": quantity, "Sector": sector, "Region": region, "Country": country,
-            "AvgWAC_NOK": avg_wac_nok, "FIFOWAC_NOK": fifo_wac_nok, "MarketValue_NOK": market_value,
-            "AvgReturn_pct": (market_value / avg_cost_basis - 1) * 100 if avg_cost_basis > 0 else 0,
-            "FIFOReturn_pct": (market_value / fifo_cost_basis - 1) * 100 if fifo_cost_basis > 0 else 0,
-            "AvgCostBasis_NOK": avg_cost_basis, "FIFOCostBasis_NOK": fifo_cost_basis,
-        })
+        if price_nok > 0:
+            avg_wac_nok = calculate_consolidated_average_wac(conn, isin)
+            fifo_wac_nok = calculate_consolidated_fifo_wac(conn, isin)
+            market_value = price_nok * quantity
+            avg_cost_basis = avg_wac_nok * quantity
+            fifo_cost_basis = fifo_wac_nok * quantity
+            
+            portfolio_data.append({
+                "Symbol": symbol,
+                "Quantity": quantity,
+                "AvgWAC_NOK": avg_wac_nok,
+                "FIFOWAC_NOK": fifo_wac_nok,
+                "LatestPrice_NOK": price_nok,
+                "MarketValue_NOK": market_value,
+                "AvgReturn_pct": (market_value / avg_cost_basis - 1) * 100 if avg_cost_basis > 0 else 0,
+                "FIFOReturn_pct": (market_value / fifo_cost_basis - 1) * 100 if fifo_cost_basis > 0 else 0,
+                "AvgCostBasis_NOK": avg_cost_basis, # Kept for summary calculation
+                "FIFOCostBasis_NOK": fifo_cost_basis, # Kept for summary calculation
+            })
+        else:
+            unpriced_securities.append(f"{symbol} ({isin})")
 
     if not portfolio_data:
         conn.close()
-        return pd.DataFrame(), {}, []
+        return pd.DataFrame(), {}, unpriced_securities
 
     df = pd.DataFrame(portfolio_data)
+    # Filter out "ghost holdings" starting with '0P00'
+    df = df[~df['Symbol'].str.startswith('0P00')]
     df = df.sort_values(by="MarketValue_NOK", ascending=False).reset_index(drop=True)
     
     total_market_value = df["MarketValue_NOK"].sum()
-    if total_market_value > 0: df['Weight'] = df['MarketValue_NOK'] / total_market_value
-    else: df['Weight'] = 0
+    if total_market_value > 0:
+        df['Weight'] = df['MarketValue_NOK'] / total_market_value
+    else:
+        df['Weight'] = 0
 
     total_avg_cost_basis = df["AvgCostBasis_NOK"].sum()
     total_fifo_cost_basis = df["FIFOCostBasis_NOK"].sum()
@@ -182,24 +204,113 @@ def generate_summary_report(verbose=True):
 
     cagr_xirr = calculate_xirr(conn, total_market_value, verbose=verbose)
     
-    # All calculations done, now assemble the summary and close the connection
+    # --- Get last transaction dates by source ---
+    c.execute("SELECT Source, MAX(TradeDate) FROM transactions GROUP BY Source ORDER BY Source")
+    last_trade_dates_raw = c.fetchall()
+    last_trade_dates_formatted = {}
+    for source, date_str in last_trade_dates_raw:
+        if date_str:
+            last_trade_date = parse_date_flexible(date_str)
+            if last_trade_date:
+                last_trade_dates_formatted[source] = last_trade_date.strftime('%Y-%m-%d')
+            else:
+                last_trade_dates_formatted[source] = "Invalid Date"
+        else:
+            last_trade_dates_formatted[source] = "No Transactions"
+
     summary_data = {
         "total_market_value": total_market_value,
         "total_avg_gain_loss": total_market_value - total_avg_cost_basis,
         "total_avg_return_pct": (total_market_value / total_avg_cost_basis - 1) * 100 if total_avg_cost_basis > 0 else 0,
         "total_fifo_gain_loss": total_market_value - total_fifo_cost_basis,
         "total_fifo_return_pct": (total_market_value / total_fifo_cost_basis - 1) * 100 if total_fifo_cost_basis > 0 else 0,
-        "total_fees": total_fees, "total_dividends": total_dividends, "total_interest_paid": total_interest_paid,
+        "total_fees": total_fees,
+        "total_dividends": total_dividends,
+        "total_interest_paid": total_interest_paid,
         "cagr_xirr": cagr_xirr,
+        "last_trade_dates_by_source": last_trade_dates_formatted # New item
     }
     
     conn.close()
-    return df, summary_data, []
+    return df, summary_data, unpriced_securities
 
 if __name__ == '__main__':
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
     main_df, summary, unpriced = generate_summary_report()
+
     if not main_df.empty:
-        print("--- Report Generation Successful ---")
-        # Keep output minimal for this test
+        # --- Holdings Table ---
+        holdings_table = Table(
+            title="Portfolio Holdings",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        holdings_table.add_column("Symbol", style="cyan", no_wrap=True)
+        holdings_table.add_column("Qty", justify="right")
+        holdings_table.add_column("Weight", justify="right")
+        holdings_table.add_column("Avg. Cost", justify="right")
+        holdings_table.add_column("FIFO Cost", justify="right")
+        holdings_table.add_column("Latest Price", justify="right")
+        holdings_table.add_column("Market Value", justify="right", style="bold yellow")
+        holdings_table.add_column("Return (Avg)", justify="right")
+        holdings_table.add_column("Return (FIFO)", justify="right")
+
+        for _, row in main_df.iterrows():
+            avg_return_style = "green" if row["AvgReturn_pct"] >= 0 else "red"
+            fifo_return_style = "green" if row["FIFOReturn_pct"] >= 0 else "red"
+            holdings_table.add_row(
+                str(row["Symbol"]),
+                f"{row['Quantity']:,.0f}",
+                f"{row['Weight']:.2%}",
+                f"{row['AvgWAC_NOK']:,.2f}",
+                f"{row['FIFOWAC_NOK']:,.2f}",
+                f"{row['LatestPrice_NOK']:,.2f}",
+                f"{row['MarketValue_NOK']:,.0f}",
+                f"[{avg_return_style}]{row['AvgReturn_pct']:.2f}%[/{avg_return_style}]",
+                f"[{fifo_return_style}]{row['FIFOReturn_pct']:.2f}%[/{fifo_return_style}]",
+            )
+        console.print(holdings_table)
+
+        # --- Summary Table ---
+        summary_table = Table(
+            title="Portfolio Summary",
+            show_header=False,
+            box=None
+        )
+        summary_table.add_column("Metric", style="bold")
+        summary_table.add_column("Value", justify="right")
+
+        summary_table.add_row("Total Market Value", f"{summary['total_market_value']:,.0f}")
+        
+        avg_gain_style = "green" if summary['total_avg_gain_loss'] >= 0 else "red"
+        summary_table.add_row("Total Gain/Loss (Avg)", f"[{avg_gain_style}]{summary['total_avg_gain_loss']:,.0f}[/{avg_gain_style}]")
+        avg_return_pct_style = "green" if summary['total_avg_return_pct'] >= 0 else "red"
+        summary_table.add_row("Total Return (Avg)", f"[{avg_return_pct_style}]{summary['total_avg_return_pct']:.2f}%[/{avg_return_pct_style}]")
+
+        fifo_gain_style = "green" if summary['total_fifo_gain_loss'] >= 0 else "red"
+        summary_table.add_row("Total Gain/Loss (FIFO)", f"[{fifo_gain_style}]{summary['total_fifo_gain_loss']:,.0f}[/{fifo_gain_style}]")
+        fifo_return_pct_style = "green" if summary['total_fifo_return_pct'] >= 0 else "red"
+        summary_table.add_row("Total Return (FIFO)", f"[{fifo_return_pct_style}]{summary['total_fifo_return_pct']:.2f}%[/{fifo_return_pct_style}]")
+
+        summary_table.add_row("Total Dividends", f"{summary['total_dividends']:,.0f}")
+        summary_table.add_row("Total Fees", f"{summary['total_fees']:,.0f}")
+        summary_table.add_row("Total Interest Paid", f"{summary['total_interest_paid']:,.0f}")
+        summary_table.add_row("CAGR (XIRR)", f"{summary['cagr_xirr']:.2%}")
+        
+        console.print(summary_table)
+
+        # --- Last Trade Dates by Source ---
+        if summary['last_trade_dates_by_source']:
+            console.print("\n[bold green]--- Last Transaction Dates by Source ---[/bold green]")
+            for source, date_str in summary['last_trade_dates_by_source'].items():
+                console.print(f"- [green]{source}[/green]: {date_str}")
+
+        if unpriced:
+            console.print("\n[bold yellow]--- Securities Not Priced ---[/bold yellow]")
+            for item in unpriced:
+                console.print(f"- [yellow]{item}[/yellow]")
     else:
-        print("--- Report Generation Failed: No data ---")
+        console.print("[bold red]--- Report Generation Failed: No data ---[/bold red]")
