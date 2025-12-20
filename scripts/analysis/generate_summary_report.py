@@ -1,59 +1,15 @@
 import sqlite3
 import pandas as pd
-import yfinance as yf
 from datetime import datetime, timedelta
 from collections import deque
 import pyxirr
+import sys
+import os
 
-# --- Date Parsing Helper ---
-def parse_date_flexible(date_string):
-    """
-    Parses a date string that could be in one of several formats.
-    """
-    if not date_string:
-        return None
-    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
-        try:
-            return datetime.strptime(date_string, fmt)
-        except ValueError:
-            continue
-    return None # Return None if no format matches
+# Add the parent directory of 'scripts' to the Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-# --- Exchange Rate and Price Functions ---
-data_cache = {}
-
-def get_historical_price(ticker_symbol, date):
-    cache_key = f"{ticker_symbol}-{date.strftime('%Y-%m-%d')}"
-    if cache_key in data_cache:
-        return data_cache[cache_key]
-
-    try:
-        end_date = date + timedelta(days=1)
-        start_date = end_date - timedelta(days=7)
-        ticker = yf.Ticker(ticker_symbol)
-        hist = ticker.history(start=start_date, end=end_date, auto_adjust=False)
-        if hist.empty:
-            data_cache[cache_key] = None
-            return None
-        price = hist['Close'].iloc[-1]
-        data_cache[cache_key] = price
-        return price
-    except Exception:
-        data_cache[cache_key] = None
-        return None
-
-def get_latest_exchange_rate(base_currency, target_currency='NOK'):
-    if base_currency == target_currency:
-        return 1.0
-    if base_currency == 'HKD' and target_currency == 'NOK':
-        usd_nok_rate = get_latest_exchange_rate('USD', 'NOK')
-        hkd_usd_rate = get_latest_exchange_rate('HKD', 'USD')
-        if usd_nok_rate and hkd_usd_rate:
-            return usd_nok_rate * hkd_usd_rate
-        else:
-            return None
-    ticker = f"{base_currency}{target_currency}=X"
-    return get_historical_price(ticker, datetime.today())
+from scripts.analysis.utils import parse_date_flexible, get_historical_price, get_historical_exchange_rate
 
 # --- Core Calculation Functions ---
 
@@ -87,7 +43,7 @@ def calculate_consolidated_fifo_wac(conn, isin):
                 try:
                     exchange_rate = float(str(exchange_rate_str).replace(',', '.'))
                     if exchange_rate != 0: cost_nok = quantity * price * exchange_rate
-                except (ValueError, AttributeError): pass
+                except (ValueError, AttributeError): pass 
             buy_lots.append({'quantity': quantity, 'cost_per_share_nok': cost_nok / quantity if quantity > 0 else 0})
         elif trans_type in ('SELL', 'TRANSFER_OUT'):
             sell_quantity = abs(quantity)
@@ -111,17 +67,19 @@ def calculate_xirr(conn, total_market_value, verbose=False):
     transactions = c.fetchall()
     dates, values = [], []
     for trade_date, trans_type, amount_base in transactions:
-        if amount_base is not None:
+        date_obj = parse_date_flexible(trade_date)
+        if amount_base is not None and date_obj:
             value = float(amount_base)
             if trans_type == 'DEPOSIT': value = -abs(value)
             else: value = abs(value)
-            dates.append(pd.to_datetime(trade_date).date())
+            dates.append(date_obj.date())
             values.append(value)
     dates.append(datetime.today().date())
     values.append(total_market_value)
-    valid_dates, valid_values = zip(*[(d, v) for d, v in zip(dates, values) if v != 0])
-    if len(valid_values) < 2: return 0.0
-    try: return pyxirr.xirr(valid_dates, valid_values)
+    if len(values) < 2: return 0.0
+    # Ensure there's at least one non-zero cashflow to avoid errors
+    if not any(v for v in values[:-1]): return 0.0
+    try: return pyxirr.xirr(dates, values)
     except Exception as e:
         print(f"\nCould not calculate Annualized Return (XIRR): {e}")
         return 0.0
@@ -152,7 +110,7 @@ def generate_summary_report(verbose=True):
             if security_currency == 'NOK':
                 price_nok = price_local
             else:
-                rate = get_latest_exchange_rate(security_currency)
+                rate = get_historical_exchange_rate(security_currency, 'NOK', datetime.today())
                 if rate is not None and rate > 0:
                     price_nok = price_local * rate
         
@@ -172,8 +130,8 @@ def generate_summary_report(verbose=True):
                 "MarketValue_NOK": market_value,
                 "AvgReturn_pct": (market_value / avg_cost_basis - 1) * 100 if avg_cost_basis > 0 else 0,
                 "FIFOReturn_pct": (market_value / fifo_cost_basis - 1) * 100 if fifo_cost_basis > 0 else 0,
-                "AvgCostBasis_NOK": avg_cost_basis, # Kept for summary calculation
-                "FIFOCostBasis_NOK": fifo_cost_basis, # Kept for summary calculation
+                "AvgCostBasis_NOK": avg_cost_basis,
+                "FIFOCostBasis_NOK": fifo_cost_basis,
             })
         else:
             unpriced_securities.append(f"{symbol} ({isin})")
@@ -183,7 +141,6 @@ def generate_summary_report(verbose=True):
         return pd.DataFrame(), {}, unpriced_securities
 
     df = pd.DataFrame(portfolio_data)
-    # Filter out "ghost holdings" starting with '0P00'
     df = df[~df['Symbol'].str.startswith('0P00')]
     df = df.sort_values(by="MarketValue_NOK", ascending=False).reset_index(drop=True)
     
@@ -204,7 +161,6 @@ def generate_summary_report(verbose=True):
 
     cagr_xirr = calculate_xirr(conn, total_market_value, verbose=verbose)
     
-    # --- Get last transaction dates by source ---
     c.execute("SELECT Source, MAX(TradeDate) FROM transactions GROUP BY Source ORDER BY Source")
     last_trade_dates_raw = c.fetchall()
     last_trade_dates_formatted = {}
@@ -228,7 +184,7 @@ def generate_summary_report(verbose=True):
         "total_dividends": total_dividends,
         "total_interest_paid": total_interest_paid,
         "cagr_xirr": cagr_xirr,
-        "last_trade_dates_by_source": last_trade_dates_formatted # New item
+        "last_trade_dates_by_source": last_trade_dates_formatted
     }
     
     conn.close()
@@ -243,11 +199,7 @@ if __name__ == '__main__':
 
     if not main_df.empty:
         # --- Holdings Table ---
-        holdings_table = Table(
-            title="Portfolio Holdings",
-            show_header=True,
-            header_style="bold magenta",
-        )
+        holdings_table = Table(title="Portfolio Holdings", show_header=True, header_style="bold magenta")
         holdings_table.add_column("Symbol", style="cyan", no_wrap=True)
         holdings_table.add_column("Qty", justify="right")
         holdings_table.add_column("Weight", justify="right")
@@ -275,31 +227,23 @@ if __name__ == '__main__':
         console.print(holdings_table)
 
         # --- Summary Table ---
-        summary_table = Table(
-            title="Portfolio Summary",
-            show_header=False,
-            box=None
-        )
+        summary_table = Table(title="Portfolio Summary", show_header=False, box=None)
         summary_table.add_column("Metric", style="bold")
         summary_table.add_column("Value", justify="right")
 
         summary_table.add_row("Total Market Value", f"{summary['total_market_value']:,.0f}")
-        
         avg_gain_style = "green" if summary['total_avg_gain_loss'] >= 0 else "red"
         summary_table.add_row("Total Gain/Loss (Avg)", f"[{avg_gain_style}]{summary['total_avg_gain_loss']:,.0f}[/{avg_gain_style}]")
         avg_return_pct_style = "green" if summary['total_avg_return_pct'] >= 0 else "red"
         summary_table.add_row("Total Return (Avg)", f"[{avg_return_pct_style}]{summary['total_avg_return_pct']:.2f}%[/{avg_return_pct_style}]")
-
         fifo_gain_style = "green" if summary['total_fifo_gain_loss'] >= 0 else "red"
         summary_table.add_row("Total Gain/Loss (FIFO)", f"[{fifo_gain_style}]{summary['total_fifo_gain_loss']:,.0f}[/{fifo_gain_style}]")
         fifo_return_pct_style = "green" if summary['total_fifo_return_pct'] >= 0 else "red"
         summary_table.add_row("Total Return (FIFO)", f"[{fifo_return_pct_style}]{summary['total_fifo_return_pct']:.2f}%[/{fifo_return_pct_style}]")
-
         summary_table.add_row("Total Dividends", f"{summary['total_dividends']:,.0f}")
         summary_table.add_row("Total Fees", f"{summary['total_fees']:,.0f}")
         summary_table.add_row("Total Interest Paid", f"{summary['total_interest_paid']:,.0f}")
         summary_table.add_row("CAGR (XIRR)", f"{summary['cagr_xirr']:.2%}")
-        
         console.print(summary_table)
 
         # --- Last Trade Dates by Source ---
