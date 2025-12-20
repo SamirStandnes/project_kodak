@@ -44,12 +44,23 @@ def get_holdings_on_date(conn, target_date):
     print(f"  - Calculated {len(final_holdings)} final holdings with quantity > 0.")
     return final_holdings
 
+def get_cash_balance_on_date(conn, target_date):
+    """
+    Calculates the cash balance (NOK) on a specific date by summing all transaction amounts.
+    """
+    target_date_obj = pd.to_datetime(target_date)
+    query = f"SELECT SUM(Amount_Base) FROM transactions WHERE TradeDate <= '{target_date_obj.strftime('%Y-%m-%d %H:%M:%S')}'"
+    cursor = conn.cursor()
+    cursor.execute(query)
+    result = cursor.fetchone()[0]
+    return result if result is not None else 0.0
+
 def get_portfolio_value_on_date(conn, isin_map, target_date):
     """
     Calculates the total market value of the portfolio on a specific historical date.
     """
     holdings = get_holdings_on_date(conn, target_date)
-    total_value = 0.0
+    securities_value = 0.0
 
     print(f"\n--- Calculating portfolio value for {target_date.strftime('%Y-%m-%d')} ---")
     if holdings.empty:
@@ -79,8 +90,9 @@ def get_portfolio_value_on_date(conn, isin_map, target_date):
                 AND Price > 0
                 ORDER BY TradeDate DESC LIMIT 1
             """
-            c.execute(last_trans_query)
-            result = c.fetchone()
+            cursor = conn.cursor()
+            cursor.execute(last_trans_query)
+            result = cursor.fetchone()
             if result:
                 price_local, trans_currency = result
                 if trans_currency and trans_currency != security_currency:
@@ -107,12 +119,17 @@ def get_portfolio_value_on_date(conn, isin_map, target_date):
         
         if price_nok > 0:
             value = price_nok * quantity
-            total_value += value
+            securities_value += value
             print(f"    - Calculated Value (NOK): {value:,.2f}")
         else:
             print(f"    - Could not price this holding in NOK.")
             
-    print(f"\n--- Total portfolio value for {target_date.strftime('%Y-%m-%d')}: {total_value:,.2f} NOK ---")
+    # Add Cash Balance
+    cash_value = get_cash_balance_on_date(conn, target_date)
+    print(f"\n  - Cash Balance (Simulated): {cash_value:,.2f} NOK")
+    
+    total_value = securities_value + cash_value
+    print(f"--- Total portfolio value for {target_date.strftime('%Y-%m-%d')}: {total_value:,.2f} NOK ---")
     return total_value
 
 def debug_year(year):
@@ -151,7 +168,9 @@ def debug_year(year):
     for date_str, amount, trans_type in cash_flows:
         flow_date = parse_date_flexible(date_str)
         # In XIRR, money in (DEPOSIT) is negative, money out (WITHDRAWAL) is positive
-        flow_amount = -amount if trans_type == 'DEPOSIT' else amount
+        # Since Amount_Base is + for Deposit and - for Withdrawal in DB,
+        # we simply negate it to get the correct XIRR flow direction.
+        flow_amount = -amount 
         if flow_date:
             dates.append(flow_date)
             values.append(flow_amount)
