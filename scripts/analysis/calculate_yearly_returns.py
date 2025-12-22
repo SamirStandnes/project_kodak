@@ -131,6 +131,8 @@ def calculate_yearly_returns():
         return []
 
     start_year = parse_date_flexible(min_date_str).year
+    if start_year < 2020:
+        start_year = 2020
     end_year = parse_date_flexible(max_date_str).year
     
     yearly_returns = []

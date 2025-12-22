@@ -92,7 +92,7 @@ def generate_summary_report(verbose=True):
     c = conn.cursor()
 
     isin_map = pd.read_sql_query("SELECT * FROM isin_symbol_map", conn).set_index('ISIN').to_dict('index')
-    c.execute("SELECT ISIN, SUM(Quantity) as Quantity FROM transactions WHERE ISIN IS NOT NULL GROUP BY ISIN HAVING SUM(Quantity) > 0")
+    c.execute("SELECT ISIN, SUM(Quantity) as Quantity FROM transactions WHERE ISIN IS NOT NULL GROUP BY ISIN HAVING SUM(Quantity) > 0.001")
     holdings = c.fetchall()
 
     portfolio_data, unpriced_securities = [], []

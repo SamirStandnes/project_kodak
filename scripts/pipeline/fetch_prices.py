@@ -37,9 +37,10 @@ def get_price_from_symbol(symbol):
     """
     try:
         ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="1d")
+        # Use 5d to handle weekends/holidays
+        hist = ticker.history(period="5d")
         if not hist.empty:
-            return hist['Close'].iloc[0]
+            return hist['Close'].iloc[-1]
         else:
             print(f"No history found for symbol {symbol}")
             return None

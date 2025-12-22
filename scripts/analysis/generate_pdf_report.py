@@ -8,6 +8,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.append(project_root)
 
 from scripts.analysis.generate_summary_report import generate_summary_report
+from scripts.analysis.calculate_yearly_returns import calculate_yearly_returns
 
 class ReportPDF(FPDF):
     def header(self):
@@ -35,6 +36,10 @@ class ReportPDF(FPDF):
 
     def holdings_table(self, df):
         self.add_page(orientation='L') # Landscape for wide table
+        self.set_font('Helvetica', 'B', 14)
+        self.cell(0, 10, 'Current Portfolio Holdings', 0, 1, 'L')
+        self.ln(5)
+        
         self.set_font('Helvetica', 'B', 10)
         
         # Column Headers
@@ -55,9 +60,48 @@ class ReportPDF(FPDF):
             self.cell(col_widths[4], 10, f"{row['FIFOWAC_NOK']:,.2f}", 1, 0, 'R')
             self.cell(col_widths[5], 10, f"{row['LatestPrice_NOK']:,.2f}", 1, 0, 'R')
             self.cell(col_widths[6], 10, f"{row['MarketValue_NOK']:,.0f}", 1, 0, 'R')
-            self.cell(col_widths[7], 10, f"{row['AvgReturn_pct']:.2f}%", 1, 0, 'R')
-            self.cell(col_widths[8], 10, f"{row['FIFOReturn_pct']:.2f}%", 1, 0, 'R')
+            
+            # Color coding for returns
+            avg_ret = row['AvgReturn_pct']
+            self.set_text_color(0, 150, 0) if avg_ret >= 0 else self.set_text_color(200, 0, 0)
+            self.cell(col_widths[7], 10, f"{avg_ret:.2f}%", 1, 0, 'R')
+            self.set_text_color(0, 0, 0) # Reset
+            
+            fifo_ret = row['FIFOReturn_pct']
+            self.set_text_color(0, 150, 0) if fifo_ret >= 0 else self.set_text_color(200, 0, 0)
+            self.cell(col_widths[8], 10, f"{fifo_ret:.2f}%", 1, 0, 'R')
+            self.set_text_color(0, 0, 0) # Reset
+            
             self.ln()
+
+    def yearly_performance_table(self, yearly_data):
+        self.add_page(orientation='P')
+        self.set_font('Helvetica', 'B', 16)
+        self.cell(0, 15, 'Yearly Performance History (XIRR)', 0, 1, 'L')
+        self.ln(5)
+
+        if not yearly_data:
+            self.set_font('Helvetica', 'I', 12)
+            self.cell(0, 10, "No yearly data available.", 0, 1, 'L')
+            return
+
+        # Table Header
+        self.set_font('Helvetica', 'B', 12)
+        self.cell(40, 10, "Year", 1, 0, 'C')
+        self.cell(60, 10, "Annual Return", 1, 1, 'C')
+
+        # Table Body
+        self.set_font('Helvetica', '', 12)
+        for row in yearly_data:
+            self.cell(40, 10, str(row['Year']), 1, 0, 'C')
+            
+            ret = row['Return']
+            if ret is not None:
+                self.set_text_color(0, 150, 0) if ret >= 0 else self.set_text_color(200, 0, 0)
+                self.cell(60, 10, f"{ret:.2%}", 1, 1, 'R')
+                self.set_text_color(0, 0, 0)
+            else:
+                self.cell(60, 10, "N/A", 1, 1, 'C')
 
     def summary_section(self, summary_data):
         self.add_page(orientation='P') # Portrait for summary
@@ -88,7 +132,15 @@ class ReportPDF(FPDF):
             self.set_font('Helvetica', 'B', 12)
             self.cell(90, 10, label, 0, 0, 'L')
             self.set_font('Helvetica', '', 12)
+            # Colorize Return % and Gain/Loss
+            if "Return" in label or "Gain/Loss" in label or "CAGR" in label:
+                try:
+                    num_val = float(value.replace(' NOK', '').replace('%', '').replace(',', ''))
+                    self.set_text_color(0, 150, 0) if num_val >= 0 else self.set_text_color(200, 0, 0)
+                except: pass
+            
             self.cell(0, 10, value, 0, 1, 'R')
+            self.set_text_color(0, 0, 0)
 
         # --- Last Trade Dates by Source ---
         if summary_data['last_trade_dates_by_source']:
@@ -138,11 +190,15 @@ def main():
         print("Report generation failed: No data returned from summary report.")
         return
 
+    print("Calculating yearly returns...")
+    yearly_returns = calculate_yearly_returns()
+
     print("Generating PDF report...")
     pdf = ReportPDF()
     pdf.title_page()
-    pdf.holdings_table(main_df)
     pdf.summary_section(summary)
+    pdf.yearly_performance_table(yearly_returns)
+    pdf.holdings_table(main_df)
     pdf.notes_section()
     
     output_filename = 'Portfolio_Summary_Report.pdf'

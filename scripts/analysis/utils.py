@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 import yfinance as yf
 import pandas as pd
+import sys
 
 data_cache = {}
 
@@ -31,7 +32,7 @@ def get_historical_price(ticker_symbol, date):
     try:
         # Look back a few days to find the last available closing price
         end_date = pd.to_datetime(date) + timedelta(days=1)
-        start_date = end_date - timedelta(days=7) 
+        start_date = end_date - timedelta(days=14) 
         
         ticker = yf.Ticker(ticker_symbol)
         hist = ticker.history(start=start_date, end=end_date, auto_adjust=False, back_adjust=False)

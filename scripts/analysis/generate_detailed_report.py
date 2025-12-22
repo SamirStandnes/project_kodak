@@ -186,14 +186,18 @@ def generate_portfolio_report():
             "Avg_Return": avg_return_pct,
         })
 
-    conn.close()
-
     if not portfolio_data:
         print("No portfolio data to display.")
         return
 
     # Create DataFrame and print summary
     df = pd.DataFrame(portfolio_data)
+    
+    # Filter out "dust" holdings (e.g. < 0.001) resulting from rounding errors or fractional remainders
+    df = df[df['Quantity'] >= 0.001].copy()
+
+    # Calculate returns
+    df['Avg_Return'] = df.apply(lambda row: (row['MarketValue_NOK'] - row['AvgCostBasis_NOK']) / row['AvgCostBasis_NOK'] * 100 if row['AvgCostBasis_NOK'] > 0 else 0, axis=1)
     
     print("\n--- Portfolio Overview (all values in NOK) ---")
     
@@ -230,6 +234,12 @@ def generate_portfolio_report():
     total_fifo_cost_basis = df["FIFOCostBasis_NOK"].sum()
     total_market_value = df["MarketValue_NOK"].sum()
 
+    # Last Transaction Dates by Source
+    c.execute("SELECT Source, MAX(TradeDate) FROM transactions GROUP BY Source ORDER BY Source")
+    last_trade_dates = c.fetchall()
+
+    conn.close()
+
     total_avg_gain_loss = total_market_value - total_avg_cost_basis
     total_avg_return_pct = (total_avg_gain_loss / total_avg_cost_basis) * 100 if total_avg_cost_basis > 0 else 0
     
@@ -240,6 +250,15 @@ def generate_portfolio_report():
     print(f"Total Market Value: {total_market_value:,.2f} NOK")
     print(f"Total Avg Cost Return: {total_avg_return_pct:.2f}%")
     print(f"Total FIFO Return: {total_fifo_return_pct:.2f}%")
+
+    # Last Transaction Dates by Source
+    print("\n--- Last Transaction Dates by Source ---")
+    for source, date_str in last_trade_dates:
+        if date_str:
+             # Just show the date part
+             print(f"- {source}: {date_str[:10]}")
+        else:
+             print(f"- {source}: No Transactions")
 
     if unpriced_securities:
         print("\n\n--- Securities Without a Current Price ---")
