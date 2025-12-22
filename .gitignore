@@ -16,3 +16,4 @@ test_report.pdf
 .venv/
 env/
 venv/
+scripts/analysis/charts/

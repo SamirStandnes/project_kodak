@@ -102,6 +102,7 @@ def generate_summary_report(verbose=True):
         
         mapping_info = isin_map[isin]
         symbol, security_currency = mapping_info['Symbol'], mapping_info['Currency']
+        sector = mapping_info.get('Sector', 'Unknown')
 
         price_local = get_historical_price(symbol, datetime.today())
         price_nok = 0
@@ -123,6 +124,7 @@ def generate_summary_report(verbose=True):
             
             portfolio_data.append({
                 "Symbol": symbol,
+                "Sector": sector,
                 "Quantity": quantity,
                 "AvgWAC_NOK": avg_wac_nok,
                 "FIFOWAC_NOK": fifo_wac_nok,

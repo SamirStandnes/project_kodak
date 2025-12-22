@@ -9,6 +9,7 @@ sys.path.append(project_root)
 
 from scripts.analysis.generate_summary_report import generate_summary_report
 from scripts.analysis.calculate_yearly_returns import calculate_yearly_returns
+from scripts.analysis.generate_charts import plot_sector_allocation, plot_yearly_returns
 
 class ReportPDF(FPDF):
     def header(self):
@@ -43,8 +44,8 @@ class ReportPDF(FPDF):
         self.set_font('Helvetica', 'B', 10)
         
         # Column Headers
-        headers = ['Symbol', 'Qty', 'Weight', 'Avg. Cost', 'FIFO Cost', 'Latest Price', 'Market Value', 'Return (Avg)', 'Return (FIFO)']
-        col_widths = [35, 20, 20, 25, 25, 25, 35, 30, 30]
+        headers = ['Symbol', 'Sector', 'Qty', 'Weight', 'Avg. Cost', 'FIFO Cost', 'Latest Price', 'Market Value', 'Return (Avg)']
+        col_widths = [25, 35, 20, 18, 25, 25, 25, 30, 25]
 
         for i, header in enumerate(headers):
             self.cell(col_widths[i], 10, header, 1, 0, 'C')
@@ -54,37 +55,40 @@ class ReportPDF(FPDF):
         self.set_font('Helvetica', '', 9)
         for _, row in df.iterrows():
             self.cell(col_widths[0], 10, str(row["Symbol"]), 1)
-            self.cell(col_widths[1], 10, f"{row['Quantity']:,.0f}", 1, 0, 'R')
-            self.cell(col_widths[2], 10, f"{row['Weight']:.2%}", 1, 0, 'R')
-            self.cell(col_widths[3], 10, f"{row['AvgWAC_NOK']:,.2f}", 1, 0, 'R')
-            self.cell(col_widths[4], 10, f"{row['FIFOWAC_NOK']:,.2f}", 1, 0, 'R')
-            self.cell(col_widths[5], 10, f"{row['LatestPrice_NOK']:,.2f}", 1, 0, 'R')
-            self.cell(col_widths[6], 10, f"{row['MarketValue_NOK']:,.0f}", 1, 0, 'R')
+            self.cell(col_widths[1], 10, str(row.get("Sector", "N/A"))[:18], 1)
+            self.cell(col_widths[2], 10, f"{row['Quantity']:,.0f}", 1, 0, 'R')
+            self.cell(col_widths[3], 10, f"{row['Weight']:.2%}", 1, 0, 'R')
+            self.cell(col_widths[4], 10, f"{row['AvgWAC_NOK']:,.2f}", 1, 0, 'R')
+            self.cell(col_widths[5], 10, f"{row['FIFOWAC_NOK']:,.2f}", 1, 0, 'R')
+            self.cell(col_widths[6], 10, f"{row['LatestPrice_NOK']:,.2f}", 1, 0, 'R')
+            self.cell(col_widths[7], 10, f"{row['MarketValue_NOK']:,.0f}", 1, 0, 'R')
             
             # Color coding for returns
             avg_ret = row['AvgReturn_pct']
             self.set_text_color(0, 150, 0) if avg_ret >= 0 else self.set_text_color(200, 0, 0)
-            self.cell(col_widths[7], 10, f"{avg_ret:.2f}%", 1, 0, 'R')
-            self.set_text_color(0, 0, 0) # Reset
-            
-            fifo_ret = row['FIFOReturn_pct']
-            self.set_text_color(0, 150, 0) if fifo_ret >= 0 else self.set_text_color(200, 0, 0)
-            self.cell(col_widths[8], 10, f"{fifo_ret:.2f}%", 1, 0, 'R')
+            self.cell(col_widths[8], 10, f"{avg_ret:.2f}%", 1, 0, 'R')
             self.set_text_color(0, 0, 0) # Reset
             
             self.ln()
 
-    def yearly_performance_table(self, yearly_data):
+    def yearly_performance_section(self, yearly_data, chart_path):
         self.add_page(orientation='P')
         self.set_font('Helvetica', 'B', 16)
         self.cell(0, 15, 'Yearly Performance History (XIRR)', 0, 1, 'L')
         self.ln(5)
+        
+        # Embed Chart
+        if os.path.exists(chart_path):
+            self.image(chart_path, x=10, y=None, w=190)
+            self.ln(5)
 
         if not yearly_data:
             self.set_font('Helvetica', 'I', 12)
             self.cell(0, 10, "No yearly data available.", 0, 1, 'L')
             return
 
+        self.ln(5)
+        
         # Table Header
         self.set_font('Helvetica', 'B', 12)
         self.cell(40, 10, "Year", 1, 0, 'C')
@@ -102,6 +106,17 @@ class ReportPDF(FPDF):
                 self.set_text_color(0, 0, 0)
             else:
                 self.cell(60, 10, "N/A", 1, 1, 'C')
+
+    def sector_allocation_section(self, chart_path):
+        self.add_page(orientation='P')
+        self.set_font('Helvetica', 'B', 16)
+        self.cell(0, 15, 'Sector Allocation', 0, 1, 'L')
+        self.ln(5)
+        
+        if os.path.exists(chart_path):
+            self.image(chart_path, x=10, y=None, w=190)
+        else:
+             self.cell(0, 10, "Chart not found.", 0, 1)
 
     def summary_section(self, summary_data):
         self.add_page(orientation='P') # Portrait for summary
@@ -193,11 +208,24 @@ def main():
     print("Calculating yearly returns...")
     yearly_returns = calculate_yearly_returns()
 
+    # Generate Charts
+    print("Generating charts...")
+    chart_dir = os.path.join("scripts", "analysis", "charts")
+    if not os.path.exists(chart_dir):
+        os.makedirs(chart_dir)
+        
+    sector_chart_path = os.path.join(chart_dir, "sector_allocation.png")
+    yearly_chart_path = os.path.join(chart_dir, "yearly_returns.png")
+    
+    plot_sector_allocation(main_df, sector_chart_path)
+    plot_yearly_returns(yearly_returns, yearly_chart_path)
+
     print("Generating PDF report...")
     pdf = ReportPDF()
     pdf.title_page()
     pdf.summary_section(summary)
-    pdf.yearly_performance_table(yearly_returns)
+    pdf.sector_allocation_section(sector_chart_path) # New Chart Section
+    pdf.yearly_performance_section(yearly_returns, yearly_chart_path) # Enhanced Table + Chart
     pdf.holdings_table(main_df)
     pdf.notes_section()
     
