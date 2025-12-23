@@ -1,84 +1,55 @@
 # Project Kodak
 
-## A. Primary Goals (Revised and Reordered)
-- **Unify Data & Performance:** Create a centralized, standardized database (portfolio.db) capable of consolidating all transaction data from disparate brokerage sources and calculating Unified Performance Metrics (e.g., Internal Rate of Return (IRR), Time-Weighted Return (TWR)) across all brokerage accounts.
+**Project Kodak** is a comprehensive portfolio management system designed to unify transaction data from multiple brokerages (Nordnet, Saxo, etc.), calculate advanced performance metrics (IRR, TWR), and track the valuation gap between market price and intrinsic value.
 
-- **Quantify Valuation Gap:** Develop a reliable method to calculate and track the percentage difference between the portfolio's aggregate Intrinsic Value and its Market Value daily.
+## 📂 Project Structure
 
-- **Establish Modeling Capability:** Implement and operationalize at least one core intrinsic valuation model.
+*   **`data/`**: Stores raw transaction files, processed data, and import logs.
+    *   `new_raw_transactions/`: Drop your new CSV/Excel exports here.
+    *   `logs/`: Detailed audit logs of every import operation.
+*   **`database/`**: Contains the SQLite database (`portfolio.db`) and automatic backups.
+*   **`docs/`**: Detailed documentation.
+    *   [**PIPELINE.md**](docs/PIPELINE.md): Technical details on data ingestion, deduplication, and the safety staging workflow.
+    *   [**TODO.md**](docs/TODO.md): Project roadmap and tasks.
+*   **`scripts/`**: Python scripts for data processing, database management, and reporting.
 
-- **Enable Seamless Data Entry:** Provide a simple, structured method (terminal interface) for ongoing manual input of new trades after the initial historical data load.
+## 🚀 Getting Started
 
-## Workflow for Incremental Transaction Updates
+### 1. Configuration
+Copy the template configuration file to create your local config:
+```bash
+cp docs/templates/config.ini.example config.ini
+```
+Edit `config.ini` with your specific settings (email server, API keys, etc.).
 
-To ensure data integrity and traceability, a new workflow has been implemented for adding new transactions. This workflow uses a staging area and unique batch IDs.
+### 2. Adding New Transactions
+The project uses a safe, two-step process for adding data:
 
-### 1. Adding Manual Transactions
+1.  **Ingest:**
+    Place your brokerage export files in `data/new_raw_transactions/` and run:
+    ```bash
+    python -m scripts.pipeline.process_new_transactions
+    ```
+    *Check `data/logs/` to see exactly what was imported vs. skipped as duplicate.*
 
-For individual trades (e.g., from DNB or other sporadic entries):
-*   **Script:** `scripts/db/add_manual_transaction.py`
-*   **How to use:**
-    1.  Run `python -m scripts.db.add_manual_transaction`.
-    2.  The script will interactively prompt you for transaction details.
-    3.  Each transaction entered will be assigned a unique `batch_id` (e.g., `manual_YYYYMMDD_HHMMSS`) and stored in the `transactions_staging` table.
-    4.  You can add multiple transactions in one session.
+2.  **Review & Commit:**
+    Inspect the staged data and commit it to the database:
+    ```bash
+    python -m scripts.db.review_staging
+    ```
+    *This automatically creates a backup of your database before saving.*
 
-### 2. Adding File-Based Transactions (e.g., Quarterly Brokerage Exports)
+### 3. Reporting
+Generate a summary of your portfolio:
+```bash
+python -m scripts.analysis.generate_summary_report
+```
+Or send a daily email report:
+```bash
+python -m scripts.messaging.send_daily_report
+```
 
-For importing new batches of transactions from brokerage export files:
-*   **Input Directory:** `data/new_raw_transactions/`
-*   **Script:** `scripts/pipeline/process_new_transactions.py`
-*   **How to use:**
-    1.  Place your new raw transaction files (e.g., Nordnet CSVs, Saxo XLSX files) into the `data/new_raw_transactions/` directory.
-    2.  Run `python -m scripts.pipeline.process_new_transactions`.
-    3.  The script will automatically detect the file type, clean the data, unify it, assign a unique `batch_id` (e.g., `file_import_YYYYMMDD_HHMMSS`), and load all processed transactions into the `transactions_staging` table.
-    4.  Processed files will be moved to `data/new_raw_transactions/archive/`.
-
-### 3. Reviewing and Committing Staged Transactions
-
-Before any new transactions are permanently added to your main `transactions` database, they go through a review process:
-*   **Script:** `scripts/db/review_staging.py`
-*   **How to use:**
-    1.  Run `python -m scripts.db.review_staging`.
-    2.  The script will display all transactions currently held in the `transactions_staging` table.
-    3.  You will be presented with three options:
-        *   **`commit`**: Moves all transactions from `transactions_staging` to your main `transactions` table. **This action automatically creates a timestamped backup of your `database/portfolio.db` before committing, ensuring data safety.** The staging area is then cleared.
-        *   **`clear`**: Deletes all transactions from the `transactions_staging` table without affecting your main database. Use this if you've made errors and want to discard the current staged batch.
-        *   **`exit`**: Exits the script without making any changes to either the staging or main tables.
-
-### Data Traceability (`batch_id`)
-Every transaction in the `transactions` table now includes a `batch_id` column.
-*   Existing historical data is marked with `batch_id = 'historical'`.
-*   New manual entries and file imports receive unique, timestamped `batch_id`s.
-This allows for precise identification and easy reversal of any batch of imported transactions if issues are discovered.
-
-## Key Outputs and Reporting
-
-Project Kodak generates two primary reports from the committed transaction data in `portfolio.db`: an email-based summary and a console-based summary. Both reports leverage the same underlying logic to ensure consistency.
-
-### 1. Daily Email Summary Report
-
-This report provides a high-level overview of your portfolio's performance, formatted as an HTML email.
-
-*   **Script:** `scripts/messaging/send_daily_report.py`
-*   **How to use:**
-    1.  Ensure your SMTP (email server) and recipient email address are configured correctly in `config.ini`.
-    2.  Run `python -m scripts.messaging.send_daily_report`.
-*   **Output:** An HTML email sent to the configured recipient, containing:
-    *   A table of your current holdings with quantities, costs, latest prices, market values, and returns (Avg & FIFO).
-    *   A summary table of overall portfolio metrics (total market value, gains/losses, returns, dividends, fees, XIRR).
-    *   A list of any securities that could not be priced.
-
-### 2. Console Summary Report
-
-This report provides a detailed view of your portfolio directly in your terminal, offering a quick way to review holdings and overall performance without sending an email. It uses rich formatting for enhanced readability.
-
-*   **Script:** `scripts/analysis/generate_summary_report.py`
-*   **How to use:**
-    1.  Run `python -m scripts.analysis.generate_summary_report`.
-*   **Output:** Formatted tables printed to your console, including:
-    *   A table of your current holdings with quantities, costs, latest prices, market values, and returns (Avg & FIFO).
-    *   A summary table of overall portfolio metrics (total market value, gains/losses, returns, dividends, fees, XIRR).
-    *   A list of any securities that could not be priced.
-
----
+## 🛠 Features
+*   **Automatic Deduplication:** Smart hashing ensures you never import the same trade twice, even if your brokerage export overlaps with previous dates.
+*   **Audit Logging:** Every file import generates a detailed log file in `data/logs/` for full transparency.
+*   **Unified Schema:** Consolidates different broker formats (Nordnet, Saxo) into a single, standardized data model.

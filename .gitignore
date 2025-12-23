@@ -8,6 +8,11 @@ config.ini
 # Database (data, not code)
 database/
 
+# Raw Data and Logs
+data/logs/
+data/new_raw_transactions/
+data/transactions-and-notes-export (1).csv
+
 # Generated output files
 *.pdf
 test_report.pdf
