@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 DB_FILE = 'database/portfolio.db'
-MAPPING_FILE = 'isin_map.csv'
+MAPPING_FILE = os.path.join('data', 'reference', 'isin_map.csv')
 
 def load_mappings_from_csv():
     """

@@ -13,12 +13,14 @@ data/logs/
 data/new_raw_transactions/
 data/transactions-and-notes-export (1).csv
 
-# Generated output files
-*.pdf
-test_report.pdf
+# Generated Output
+reports/*
+!reports/.gitkeep
+
+# Temporary Charts
+reports/temp_charts/
 
 # Virtual environment
 .venv/
 env/
 venv/
-scripts/analysis/charts/

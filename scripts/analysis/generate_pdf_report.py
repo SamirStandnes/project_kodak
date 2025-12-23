@@ -210,7 +210,7 @@ def main():
 
     # Generate Charts
     print("Generating charts...")
-    chart_dir = os.path.join("scripts", "analysis", "charts")
+    chart_dir = os.path.join("reports", "temp_charts")
     if not os.path.exists(chart_dir):
         os.makedirs(chart_dir)
         
@@ -229,7 +229,7 @@ def main():
     pdf.holdings_table(main_df)
     pdf.notes_section()
     
-    output_filename = 'Portfolio_Summary_Report.pdf'
+    output_filename = os.path.join('reports', 'Portfolio_Summary_Report.pdf')
     pdf.output(output_filename)
     
     print(f"Successfully generated {output_filename}")
