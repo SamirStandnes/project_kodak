@@ -116,7 +116,11 @@ def calculate_yearly_returns():
     """
     Calculates the annual return (XIRR) for each year in the transaction history.
     """
-    db_file = 'database/portfolio.db'
+    # Construct absolute path to the database
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(current_dir))
+    db_file = os.path.join(project_root, 'database', 'portfolio.db')
+    
     conn = sqlite3.connect(db_file)
     c = conn.cursor()
 
@@ -189,6 +193,84 @@ def calculate_yearly_returns():
     conn.close()
     return yearly_returns
 
+def calculate_rolling_returns():
+    """
+    Calculates XIRR for rolling periods: YTD, 1Y, 3Y, 5Y, All Time.
+    """
+    # Construct absolute path to the database
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(current_dir))
+    db_file = os.path.join(project_root, 'database', 'portfolio.db')
+    
+    conn = sqlite3.connect(db_file)
+    c = conn.cursor()
+    
+    isin_map = pd.read_sql_query("SELECT * FROM isin_symbol_map", conn).set_index('ISIN').to_dict('index')
+    
+    today = datetime.now()
+    periods = {
+        'YTD': datetime(today.year, 1, 1),
+        '1Y': today - timedelta(days=365),
+        '3Y': today - timedelta(days=3*365),
+        '5Y': today - timedelta(days=5*365),
+        'All Time': None # Will handle separately
+    }
+    
+    results = {}
+    
+    # Get current portfolio value (End Value)
+    end_value = get_portfolio_value_on_date(conn, isin_map, today)
+    
+    # Get earliest transaction date for 'All Time'
+    c.execute("SELECT MIN(TradeDate) FROM transactions")
+    min_date_str = c.fetchone()[0]
+    if min_date_str:
+        periods['All Time'] = parse_date_flexible(min_date_str)
+    
+    for label, start_date in periods.items():
+        if start_date is None or start_date > today:
+            results[label] = None
+            continue
+            
+        print(f"Calculating {label} return (since {start_date.date()})...")
+        
+        # 1. Get Portfolio Value at Start Date
+        start_value = get_portfolio_value_on_date(conn, isin_map, start_date)
+        
+        # 2. Get Cash Flows between Start and Today
+        c.execute("""
+            SELECT TradeDate, Amount_Base FROM transactions 
+            WHERE Type IN ('DEPOSIT', 'WITHDRAWAL') 
+            AND TradeDate > ? AND TradeDate <= ?
+        """, (start_date.strftime('%Y-%m-%d %H:%M:%S'), today.strftime('%Y-%m-%d %H:%M:%S')))
+        
+        cash_flows = c.fetchall()
+        
+        # 3. Setup XIRR
+        dates = [start_date]
+        values = [-start_value] # Initial Investment
+        
+        for date_str, amount in cash_flows:
+            d = parse_date_flexible(date_str)
+            if d:
+                dates.append(d)
+                values.append(-amount) # -Deposit, +Withdrawal
+                
+        dates.append(today)
+        values.append(end_value)
+        
+        try:
+            if len(dates) < 2:
+                xirr = 0.0
+            else:
+                xirr = pyxirr.xirr(dates, values)
+        except Exception:
+            xirr = None
+            
+        results[label] = xirr
+        
+    conn.close()
+    return results
 
 if __name__ == '__main__':
     console = Console()
@@ -204,3 +286,7 @@ if __name__ == '__main__':
             table.add_row(str(result['Year']), return_str)
             
         console.print(table)
+        
+    # Test Rolling
+    rolling = calculate_rolling_returns()
+    console.print(rolling)

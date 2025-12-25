@@ -1,6 +1,7 @@
 import sqlite3
 import pandas as pd
 from datetime import datetime
+from scripts.pipeline.export_db_to_csv import export_db_to_csv
 
 def review_staged_transactions():
     """
@@ -73,6 +74,11 @@ def commit_staged_transactions(conn):
         print("Staging area has been cleared.")
         
         conn.commit()
+        
+        # --- Auto-Sync: Export DB to CSV ---
+        print("\n--- Syncing CSV ---")
+        export_db_to_csv()
+        
     except Exception as e:
         conn.rollback()
         print(f"An error occurred during commit: {e}")

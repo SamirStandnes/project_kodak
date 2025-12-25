@@ -4,3 +4,6 @@ rich
 fpdf2
 matplotlib
 seaborn
+streamlit
+plotly
+pyxirr
