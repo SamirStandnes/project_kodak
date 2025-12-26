@@ -39,7 +39,7 @@ def check_staging_status():
     return count
 
 # --- Main Layout ---
-st.title("Kodak Portfolio Overview")
+st.title("Portfolio Overview")
 
 with st.spinner('Loading portfolio data...'):
     try:
@@ -80,9 +80,11 @@ with st.sidebar:
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
+    tmv = summary_data['total_market_value']
+    tmv_str = f"{tmv/1_000_000:.2f} M NOK" if tmv > 1_000_000 else f"{tmv:,.0f} NOK"
     st.metric(
         label="Total Market Value",
-        value=f"{summary_data['total_market_value']:,.0f} NOK",
+        value=tmv_str,
     )
 
 with col2:
@@ -128,7 +130,9 @@ with col_charts_1:
 
 with col_charts_2:
     st.subheader("Quick Stats")
+    cash_bal = summary_data.get('current_cash_balance', 0)
     st.markdown(f"""
+    - **Cash Balance:** {cash_bal:,.0f} NOK
     - **Total Fees Paid:** {summary_data['total_fees']:,.0f} NOK
     - **Total Dividends:** {summary_data['total_dividends']:,.0f} NOK
     - **Total Interest:** {summary_data['total_interest_paid']:,.0f} NOK

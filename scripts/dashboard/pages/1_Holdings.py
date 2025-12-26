@@ -30,7 +30,11 @@ if not df.empty:
     display_df = df.copy()
     
     # Filter out empty rows/symbols if any
-    display_df = display_df[display_df['Symbol'].notna() & (display_df['Symbol'] != '')]
+    display_df = display_df[
+        display_df['Symbol'].notna() & 
+        (display_df['Symbol'].astype(str).str.strip() != '')
+    ]
+    display_df = display_df.reset_index(drop=True)
     
     display_df['Weight'] = display_df['Weight'] * 100  # Scale for 0-100 display
 
@@ -61,8 +65,7 @@ if not df.empty:
         display_df[cols_to_show],
         use_container_width=True,
         column_config=column_config,
-        hide_index=True,
-        height=800
+        hide_index=True
     )
 else:
     st.info("No current holdings found.")

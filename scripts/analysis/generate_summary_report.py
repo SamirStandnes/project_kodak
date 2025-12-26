@@ -93,6 +93,30 @@ def generate_summary_report(verbose=True):
     total_dividends = other_sums.get('DIVIDEND', 0)
     total_interest_paid = abs(other_sums.get('INTEREST', 0))
 
+    # Calculate Current Cash Balance
+    c.execute("SELECT Currency_Base, SUM(Amount_Base) FROM transactions GROUP BY Currency_Base")
+    currency_balances = c.fetchall()
+
+    current_cash_balance = 0.0
+    for currency, amount in currency_balances:
+        if amount is None or amount == 0:
+            continue
+        
+        # Normalize currency code
+        currency = currency.strip().upper() if currency else 'NOK'
+        
+        if currency == 'NOK':
+            current_cash_balance += amount
+        else:
+            # Convert foreign currency cash balance to NOK using today's rate
+            rate = get_historical_exchange_rate(currency, 'NOK', datetime.today())
+            if rate is not None and rate > 0:
+                current_cash_balance += amount * rate
+            else:
+                if verbose:
+                    print(f"Warning: Could not get exchange rate for {currency} to NOK. Using raw amount.", file=sys.stderr)
+                current_cash_balance += amount
+
     cagr_xirr = calculate_xirr(conn, total_market_value, verbose=verbose)
     
     c.execute("SELECT Source, MAX(TradeDate) FROM transactions GROUP BY Source ORDER BY Source")
@@ -110,6 +134,7 @@ def generate_summary_report(verbose=True):
 
     summary_data = {
         "total_market_value": total_market_value,
+        "current_cash_balance": current_cash_balance,
         "total_avg_gain_loss": total_market_value - total_avg_cost_basis,
         "total_avg_return_pct": (total_market_value / total_avg_cost_basis - 1) * 100 if total_avg_cost_basis > 0 else 0,
         "total_fifo_gain_loss": total_market_value - total_fifo_cost_basis,

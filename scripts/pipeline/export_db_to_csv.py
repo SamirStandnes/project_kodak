@@ -9,8 +9,11 @@ def export_db_to_csv():
     to the legacy CSV format expected by reporting tools.
     """
     db_file = 'database/portfolio.db'
-    output_csv = 'data/processed/unified_portfolio_data.csv'
-    output_xlsx = 'data/processed/unified_portfolio_data.xlsx'
+    output_csv = 'data/exports/unified_portfolio_data.csv'
+    output_xlsx = 'data/exports/unified_portfolio_data.xlsx'
+    
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
     
     # Ensure directory exists
     os.makedirs(os.path.dirname(output_csv), exist_ok=True)
