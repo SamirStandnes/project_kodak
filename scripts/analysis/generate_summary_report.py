@@ -8,7 +8,14 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from scripts.analysis.utils import parse_date_flexible, get_historical_price, get_historical_exchange_rate
-from scripts.analysis.calculations import calculate_consolidated_average_wac, calculate_consolidated_fifo_wac, calculate_xirr
+from scripts.analysis.calculations import (
+    calculate_consolidated_average_wac, 
+    calculate_consolidated_fifo_wac, 
+    calculate_xirr,
+    get_holdings_on_date,
+    get_cash_balance_on_date,
+    get_securities_value_on_date
+)
 
 # --- Main Report Generation ---
 
@@ -22,12 +29,14 @@ def generate_summary_report(verbose=True):
     c = conn.cursor()
 
     isin_map = pd.read_sql_query("SELECT * FROM isin_symbol_map", conn).set_index('ISIN').to_dict('index')
-    c.execute("SELECT ISIN, SUM(Quantity) as Quantity FROM transactions WHERE ISIN IS NOT NULL GROUP BY ISIN HAVING SUM(Quantity) > 0.001")
-    holdings = c.fetchall()
+    
+    # Use centralized logic to get current holdings
+    today = datetime.now()
+    holdings_series = get_holdings_on_date(conn, today)
 
     portfolio_data, unpriced_securities = [], []
     
-    for isin, quantity in holdings:
+    for isin, quantity in holdings_series.items():
         if isin not in isin_map: continue
         
         mapping_info = isin_map[isin]
@@ -35,14 +44,32 @@ def generate_summary_report(verbose=True):
         sector = mapping_info.get('Sector', 'Unknown')
         region = mapping_info.get('Region', 'Unknown')
 
-        price_local = get_historical_price(symbol, datetime.today())
+        # Use the same logic as the Performance page: get_historical_price with Fallback
+        price_local = get_historical_price(symbol, today)
+        
+        # FALLBACK logic (matching calculations.py)
+        if price_local is None or price_local == 0:
+            last_trans_query = f"""
+                SELECT Price, Currency_Local FROM transactions 
+                WHERE ISIN = '{isin}' 
+                AND TradeDate <= '{today.strftime('%Y-%m-%d %H:%M:%S')}' 
+                AND Price > 0
+                ORDER BY TradeDate DESC LIMIT 1
+            """
+            cursor = conn.cursor()
+            cursor.execute(last_trans_query)
+            result = cursor.fetchone()
+            if result:
+                price_local, trans_currency = result
+                if trans_currency and trans_currency != security_currency:
+                    security_currency = trans_currency
+        
         price_nok = 0
-
         if price_local is not None and price_local > 0:
             if security_currency == 'NOK':
                 price_nok = price_local
             else:
-                rate = get_historical_exchange_rate(security_currency, 'NOK', datetime.today())
+                rate = get_historical_exchange_rate(security_currency, 'NOK', today)
                 if rate is not None and rate > 0:
                     price_nok = price_local * rate
         
@@ -93,31 +120,11 @@ def generate_summary_report(verbose=True):
     total_dividends = other_sums.get('DIVIDEND', 0)
     total_interest_paid = abs(other_sums.get('INTEREST', 0))
 
-    # Calculate Current Cash Balance
-    c.execute("SELECT Currency_Base, SUM(Amount_Base) FROM transactions GROUP BY Currency_Base")
-    currency_balances = c.fetchall()
+    # Use Centralized Cash Balance calculation (includes Margin/Debt correctly)
+    current_cash_balance = get_cash_balance_on_date(conn, today)
 
-    current_cash_balance = 0.0
-    for currency, amount in currency_balances:
-        if amount is None or amount == 0:
-            continue
-        
-        # Normalize currency code
-        currency = currency.strip().upper() if currency else 'NOK'
-        
-        if currency == 'NOK':
-            current_cash_balance += amount
-        else:
-            # Convert foreign currency cash balance to NOK using today's rate
-            rate = get_historical_exchange_rate(currency, 'NOK', datetime.today())
-            if rate is not None and rate > 0:
-                current_cash_balance += amount * rate
-            else:
-                if verbose:
-                    print(f"Warning: Could not get exchange rate for {currency} to NOK. Using raw amount.", file=sys.stderr)
-                current_cash_balance += amount
-
-    cagr_xirr = calculate_xirr(conn, total_market_value, verbose=verbose)
+    # Calculate XIRR using standardized Net Equity logic
+    cagr_xirr = calculate_xirr(conn, total_market_value, current_cash_balance, verbose=verbose)
     
     c.execute("SELECT Source, MAX(TradeDate) FROM transactions GROUP BY Source ORDER BY Source")
     last_trade_dates_raw = c.fetchall()

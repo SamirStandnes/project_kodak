@@ -40,17 +40,25 @@ if not df.empty:
 
     # Configuration for columns
     column_config = {
-        "Symbol": st.column_config.TextColumn("Symbol", help="Ticker Symbol"),
-        "Sector": st.column_config.TextColumn("Sector"),
-        "Quantity": st.column_config.NumberColumn("Qty", format="%.0f"),
-        "LatestPrice_NOK": st.column_config.NumberColumn("Price (NOK)", format="%.2f"),
-        "MarketValue_NOK": st.column_config.NumberColumn("Market Value", format="%.0f"),
+        "Symbol": st.column_config.TextColumn("Symbol", help="Ticker Symbol", width="small"),
+        "Sector": st.column_config.TextColumn("Sector", width="medium"),
+        "Quantity": st.column_config.NumberColumn("Qty", format="%.0f", help="Shares held"),
+        "LatestPrice_NOK": st.column_config.NumberColumn("Price", format="%.2f"),
+        "MarketValue_NOK": st.column_config.NumberColumn("Market Value", format="%.0f", help="Total position value in NOK"),
         "AvgWAC_NOK": st.column_config.NumberColumn("Avg Cost", format="%.2f"),
-        "AvgReturn_pct": st.column_config.NumberColumn("Return (Avg)", format="%.2f%%"),
-        "FIFOReturn_pct": st.column_config.NumberColumn("Return (FIFO)", format="%.2f%%"),
+        "AvgReturn_pct": st.column_config.NumberColumn(
+            "Return (Avg)", 
+            format="%.2f%%",
+            help="Total return based on weighted average cost"
+        ),
+        "FIFOReturn_pct": st.column_config.NumberColumn(
+            "Return (FIFO)", 
+            format="%.2f%%",
+            help="Total return based on First-In-First-Out cost basis"
+        ),
         "Weight": st.column_config.ProgressColumn(
-            "Portfolio Weight", 
-            format="%.2f%%", 
+            "Weight", 
+            format="%.1f%%", 
             min_value=0, 
             max_value=100
         ),
@@ -61,6 +69,7 @@ if not df.empty:
         "MarketValue_NOK", "AvgWAC_NOK", "AvgReturn_pct", "FIFOReturn_pct", "Weight"
     ]
 
+    # Display the dataframe with better styling
     st.dataframe(
         display_df[cols_to_show],
         use_container_width=True,

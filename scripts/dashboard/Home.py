@@ -81,7 +81,7 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     tmv = summary_data['total_market_value']
-    tmv_str = f"{tmv/1_000_000:.2f} M NOK" if tmv > 1_000_000 else f"{tmv:,.0f} NOK"
+    tmv_str = f"{tmv:,.0f} NOK"
     st.metric(
         label="Total Market Value",
         value=tmv_str,
@@ -105,8 +105,9 @@ with col3:
 
 with col4:
     st.metric(
-        label="CAGR (XIRR)",
+        label="Portfolio IRR (XIRR)",
         value=f"{summary_data['cagr_xirr']:.2%}",
+        help="Annualized internal rate of return accounting for cash flows and margin debt."
     )
 
 st.markdown("---")
@@ -132,9 +133,9 @@ with col_charts_2:
     st.subheader("Quick Stats")
     cash_bal = summary_data.get('current_cash_balance', 0)
     st.markdown(f"""
-    - **Cash Balance:** {cash_bal:,.0f} NOK
-    - **Total Fees Paid:** {summary_data['total_fees']:,.0f} NOK
+    - **Net Cash Balance:** {cash_bal:,.0f} NOK
     - **Total Dividends:** {summary_data['total_dividends']:,.0f} NOK
+    - **Total Fees Paid:** {summary_data['total_fees']:,.0f} NOK
     - **Total Interest:** {summary_data['total_interest_paid']:,.0f} NOK
     - **Active Positions:** {len(holdings_df)}
     """)
