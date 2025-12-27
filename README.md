@@ -5,13 +5,11 @@
 ## 📂 Project Structure
 
 *   **`data/`**: Stores raw transaction files, processed data, and import logs.
-    *   `new_raw_transactions/`: Drop your new CSV/Excel exports here.
-    *   `logs/`: Detailed audit logs of every import operation.
 *   **`database/`**: Contains the SQLite database (`portfolio.db`) and automatic backups.
 *   **`docs/`**: Detailed documentation.
-    *   [**PIPELINE.md**](docs/PIPELINE.md): Technical details on data ingestion, deduplication, and the safety staging workflow.
-    *   [**TODO.md**](docs/TODO.md): Project roadmap and tasks.
-*   **`scripts/`**: Python scripts for data processing, database management, and reporting.
+    *   [**PIPELINE.md**](docs/PIPELINE.md): Technical deep-dive into the data flow, architecture, and safety mechanisms.
+    *   [**TODO.md**](docs/TODO.md): Project roadmap.
+*   **`scripts/`**: Python scripts for data processing (`pipeline`), analysis (`analysis`), and the dashboard (`dashboard`).
 
 ## 🚀 Getting Started
 
@@ -20,36 +18,41 @@ Copy the template configuration file to create your local config:
 ```bash
 cp docs/templates/config.ini.example config.ini
 ```
-Edit `config.ini` with your specific settings (email server, API keys, etc.).
+Edit `config.ini` with your specific settings.
 
-### 2. Adding New Transactions
-The project uses a safe, two-step process for adding data:
+### 2. Routine Workflow
 
-1.  **Ingest:**
-    Place your brokerage export files in `data/new_raw_transactions/` and run:
+**A. Import New Data (Monthly/Weekly)**
+1.  Place brokerage export files in `data/new_raw_transactions/`.
+2.  Run the ingestion pipeline:
     ```bash
     python -m scripts.pipeline.process_new_transactions
     ```
-    *Check `data/logs/` to see exactly what was imported vs. skipped as duplicate.*
-
-2.  **Review & Commit:**
-    Inspect the staged data and commit it to the database:
+3.  Review and commit to the database:
     ```bash
     python -m scripts.db.review_staging
     ```
-    *This automatically creates a backup of your database before saving.*
 
-### 3. Reporting
-Generate a summary of your portfolio:
+**B. Update Market Data (Daily/On-Demand)**
+Before generating reports, fetch the latest prices to ensure accuracy:
 ```bash
-python -m scripts.analysis.generate_summary_report
+python -m scripts.pipeline.fetch_prices
 ```
-Or send a daily email report:
+
+### 3. View Your Portfolio
+
+**📊 Interactive Dashboard (Recommended)**
+Launch the full web interface:
 ```bash
-python -m scripts.messaging.send_daily_report
+streamlit run scripts/dashboard/Home.py
 ```
+
+**📄 Console Summaries**
+*   **Summary:** `python -m scripts.analysis.generate_summary_report`
+*   **Detailed:** `python -m scripts.analysis.generate_detailed_report`
 
 ## 🛠 Features
-*   **Automatic Deduplication:** Smart hashing ensures you never import the same trade twice, even if your brokerage export overlaps with previous dates.
-*   **Audit Logging:** Every file import generates a detailed log file in `data/logs/` for full transparency.
-*   **Unified Schema:** Consolidates different broker formats (Nordnet, Saxo) into a single, standardized data model.
+*   **Safe Staging:** Never corrupts your main database with bad imports.
+*   **Unified Architecture:** All reports share the same logic and price data for 100% consistency.
+*   **Automatic Deduplication:** Smart hashing prevents duplicate trades.
+*   **Multi-Currency:** Robust handling of FX rates and cross-rates.

@@ -10,11 +10,13 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(project_root)
 
 from scripts.analysis.calculate_yearly_returns import calculate_yearly_returns, calculate_rolling_returns
-from scripts.analysis.generate_summary_report import generate_summary_report
+from scripts.dashboard.sidebar import render_sidebar, load_summary_data
 
 st.set_page_config(page_title="Portfolio Performance", page_icon="📈", layout="wide")
 
 st.title("📈 Portfolio Performance")
+
+render_sidebar()
 
 # --- Data Loading ---
 @st.cache_data(ttl=3600)
@@ -24,11 +26,6 @@ def load_yearly_data():
 @st.cache_data(ttl=3600)
 def load_rolling_data():
     return calculate_rolling_returns()
-
-@st.cache_data(ttl=300)
-def load_holdings_data():
-    df, _, _ = generate_summary_report(verbose=False)
-    return df
 
 # --- Rolling Returns Section ---
 st.subheader("Return Summary (Annualized)")
@@ -118,7 +115,7 @@ def plot_performance_by_group(df, group_col, title):
     return fig
 
 try:
-    holdings_df = load_holdings_data()
+    holdings_df, _, _ = load_summary_data()
     if not holdings_df.empty:
         col1, col2 = st.columns(2)
         

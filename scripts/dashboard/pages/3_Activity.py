@@ -9,9 +9,13 @@ current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 project_root = os.path.dirname(os.path.dirname(current_dir))
 sys.path.append(project_root)
 
+from scripts.dashboard.sidebar import render_sidebar
+
 st.set_page_config(page_title="Portfolio Activity", page_icon="📝", layout="wide")
 
 st.title("📝 Recent Activity")
+
+render_sidebar()
 
 @st.cache_data(ttl=60)
 def load_transactions(limit=100):

@@ -1,4 +1,3 @@
-import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
 import pyxirr
@@ -10,7 +9,8 @@ from rich.table import Table
 # Add the parent directory of 'scripts' to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from scripts.analysis.utils import parse_date_flexible
+from scripts.shared.utils import parse_date_flexible
+from scripts.shared.db import get_db_connection
 from scripts.analysis.calculations import (
     get_portfolio_value_on_date, 
     get_securities_value_on_date, 
@@ -22,12 +22,7 @@ def calculate_yearly_returns(invested_only=False):
     Calculates the annual return (XIRR) for each year in the transaction history.
     If invested_only=True, it ignores cash balances and calculates return on Invested Capital.
     """
-    # Construct absolute path to the database
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(current_dir))
-    db_file = os.path.join(project_root, 'database', 'portfolio.db')
-    
-    conn = sqlite3.connect(db_file)
+    conn = get_db_connection()
     c = conn.cursor()
 
     isin_map = pd.read_sql_query("SELECT * FROM isin_symbol_map", conn).set_index('ISIN').to_dict('index')
@@ -119,12 +114,7 @@ def calculate_rolling_returns():
     """
     Calculates XIRR for rolling periods: YTD, 1Y, 3Y, 5Y, All Time.
     """
-    # Construct absolute path to the database
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(current_dir))
-    db_file = os.path.join(project_root, 'database', 'portfolio.db')
-    
-    conn = sqlite3.connect(db_file)
+    conn = get_db_connection()
     c = conn.cursor()
     
     isin_map = pd.read_sql_query("SELECT * FROM isin_symbol_map", conn).set_index('ISIN').to_dict('index')

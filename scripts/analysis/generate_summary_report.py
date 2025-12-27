@@ -1,35 +1,34 @@
-import sqlite3
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import sys
 import os
 
 # Add the parent directory of 'scripts' to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from scripts.analysis.utils import parse_date_flexible, get_historical_price, get_historical_exchange_rate
+from scripts.shared.db import get_db_connection
+from scripts.shared.utils import parse_date_flexible
+from scripts.shared.market_data import get_exchange_rate, get_current_prices_from_db
+
 from scripts.analysis.calculations import (
     calculate_consolidated_average_wac, 
     calculate_consolidated_fifo_wac, 
     calculate_xirr,
     get_holdings_on_date,
-    get_cash_balance_on_date,
-    get_securities_value_on_date
+    get_cash_balance_on_date
 )
 
 # --- Main Report Generation ---
 
 def generate_summary_report(verbose=True):
-    # Construct absolute path to the database
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(os.path.dirname(current_dir))
-    db_file = os.path.join(project_root, 'database', 'portfolio.db')
-    
-    conn = sqlite3.connect(db_file)
+    conn = get_db_connection()
     c = conn.cursor()
 
     isin_map = pd.read_sql_query("SELECT * FROM isin_symbol_map", conn).set_index('ISIN').to_dict('index')
     
+    # Load current prices from database snapshot
+    price_map = get_current_prices_from_db(conn)
+
     # Use centralized logic to get current holdings
     today = datetime.now()
     holdings_series = get_holdings_on_date(conn, today)
@@ -44,10 +43,10 @@ def generate_summary_report(verbose=True):
         sector = mapping_info.get('Sector', 'Unknown')
         region = mapping_info.get('Region', 'Unknown')
 
-        # Use the same logic as the Performance page: get_historical_price with Fallback
-        price_local = get_historical_price(symbol, today)
+        # Use Price from Database Snapshot
+        price_local = price_map.get(isin, 0)
         
-        # FALLBACK logic (matching calculations.py)
+        # FALLBACK logic
         if price_local is None or price_local == 0:
             last_trans_query = f"""
                 SELECT Price, Currency_Local FROM transactions 
@@ -69,7 +68,7 @@ def generate_summary_report(verbose=True):
             if security_currency == 'NOK':
                 price_nok = price_local
             else:
-                rate = get_historical_exchange_rate(security_currency, 'NOK', today)
+                rate = get_exchange_rate(security_currency, 'NOK', today)
                 if rate is not None and rate > 0:
                     price_nok = price_local * rate
         
@@ -120,10 +119,8 @@ def generate_summary_report(verbose=True):
     total_dividends = other_sums.get('DIVIDEND', 0)
     total_interest_paid = abs(other_sums.get('INTEREST', 0))
 
-    # Use Centralized Cash Balance calculation (includes Margin/Debt correctly)
     current_cash_balance = get_cash_balance_on_date(conn, today)
 
-    # Calculate XIRR using standardized Net Equity logic
     cagr_xirr = calculate_xirr(conn, total_market_value, current_cash_balance, verbose=verbose)
     
     c.execute("SELECT Source, MAX(TradeDate) FROM transactions GROUP BY Source ORDER BY Source")
@@ -179,36 +176,40 @@ if __name__ == '__main__':
         for _, row in main_df.iterrows():
             avg_return_style = "green" if row["AvgReturn_pct"] >= 0 else "red"
             fifo_return_style = "green" if row["FIFOReturn_pct"] >= 0 else "red"
+            
+            # Format Market Value with spaces
+            mv_str = f"{row['MarketValue_NOK']:,.0f}".replace(',', ' ')
+            
             holdings_table.add_row(
                 str(row["Symbol"]),
-                f"{row['Quantity']:,.0f}",
+                f"{row['Quantity']:,.0f}".replace(',', ' '),
                 f"{row['Weight']:.2%}",
-                f"{row['AvgWAC_NOK']:,.2f}",
-                f"{row['FIFOWAC_NOK']:,.2f}",
-                f"{row['LatestPrice_NOK']:,.2f}",
-                f"{row['MarketValue_NOK']:,.0f}",
+                f"{row['AvgWAC_NOK']:,.2f}".replace(',', ' '),
+                f"{row['FIFOWAC_NOK']:,.2f}".replace(',', ' '),
+                f"{row['LatestPrice_NOK']:,.2f}".replace(',', ' '),
+                mv_str,
                 f"[{avg_return_style}]{row['AvgReturn_pct']:.2f}%[/{avg_return_style}]",
                 f"[{fifo_return_style}]{row['FIFOReturn_pct']:.2f}%[/{fifo_return_style}]",
             )
         console.print(holdings_table)
 
         # --- Summary Table ---
-        summary_table = Table(title="Portfolio Summary", show_header=False, box=None)
+        summary_table = Table(title="Portfolio Summary (M NOK)", show_header=False, box=None)
         summary_table.add_column("Metric", style="bold")
         summary_table.add_column("Value", justify="right")
 
-        summary_table.add_row("Total Market Value", f"{summary['total_market_value']:,.0f}")
+        summary_table.add_row("Total Market Value", f"{summary['total_market_value']/1e6:,.2f}M".replace(',', ' '))
         avg_gain_style = "green" if summary['total_avg_gain_loss'] >= 0 else "red"
-        summary_table.add_row("Total Gain/Loss (Avg)", f"[{avg_gain_style}]{summary['total_avg_gain_loss']:,.0f}[/{avg_gain_style}]")
+        summary_table.add_row("Total Gain/Loss (Avg)", f"[{avg_gain_style}]{summary['total_avg_gain_loss']/1e6:,.2f}M[/{avg_gain_style}]".replace(',', ' '))
         avg_return_pct_style = "green" if summary['total_avg_return_pct'] >= 0 else "red"
         summary_table.add_row("Total Return (Avg)", f"[{avg_return_pct_style}]{summary['total_avg_return_pct']:.2f}%[/{avg_return_pct_style}]")
         fifo_gain_style = "green" if summary['total_fifo_gain_loss'] >= 0 else "red"
-        summary_table.add_row("Total Gain/Loss (FIFO)", f"[{fifo_gain_style}]{summary['total_fifo_gain_loss']:,.0f}[/{fifo_gain_style}]")
+        summary_table.add_row("Total Gain/Loss (FIFO)", f"[{fifo_gain_style}]{summary['total_fifo_gain_loss']/1e6:,.2f}M[/{fifo_gain_style}]".replace(',', ' '))
         fifo_return_pct_style = "green" if summary['total_fifo_return_pct'] >= 0 else "red"
         summary_table.add_row("Total Return (FIFO)", f"[{fifo_return_pct_style}]{summary['total_fifo_return_pct']:.2f}%[/{fifo_return_pct_style}]")
-        summary_table.add_row("Total Dividends", f"{summary['total_dividends']:,.0f}")
-        summary_table.add_row("Total Fees", f"{summary['total_fees']:,.0f}")
-        summary_table.add_row("Total Interest Paid", f"{summary['total_interest_paid']:,.0f}")
+        summary_table.add_row("Total Dividends", f"{summary['total_dividends']/1e6:,.2f}M".replace(',', ' '))
+        summary_table.add_row("Total Fees", f"{abs(summary['total_fees']):,.0f}".replace(',', ' '))
+        summary_table.add_row("Total Interest Paid", f"{abs(summary['total_interest_paid']):,.0f}".replace(',', ' '))
         summary_table.add_row("CAGR (XIRR)", f"{summary['cagr_xirr']:.2%}")
         console.print(summary_table)
 

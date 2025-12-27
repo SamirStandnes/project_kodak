@@ -2,7 +2,10 @@ from collections import deque
 from datetime import datetime, timedelta
 import pyxirr
 import pandas as pd
-from scripts.analysis.utils import parse_date_flexible, get_historical_price, get_historical_exchange_rate
+
+# Import from shared modules
+from scripts.shared.utils import parse_date_flexible
+from scripts.shared.market_data import get_historical_price, get_exchange_rate
 
 def calculate_consolidated_average_wac(conn, isin):
     """
@@ -94,35 +97,29 @@ def calculate_xirr(conn, total_market_value, current_cash_balance=0.0, verbose=F
 
 def get_holdings_on_date(conn, target_date):
     """
-    Calculates the quantity of each ISIN held on a specific date.
+    Calculates the quantity of each ISIN held on a specific date using SQL aggregation.
     """
     # Ensure target_date is a datetime object
     target_date_obj = pd.to_datetime(target_date)
     
-    # Query all relevant transactions up to the target date
-    query = f"SELECT ISIN, Type, Quantity FROM transactions WHERE TradeDate <= '{target_date_obj.strftime('%Y-%m-%d %H:%M:%S')}'"
+    # SQL Query to sum quantities up to the target date
+    # We trust the signs in the database (Buy +, Sell -) which allows handling ADJUSTMENTs correctly automatically.
+    query = f"""
+        SELECT ISIN, SUM(Quantity) as NetQuantity
+        FROM transactions 
+        WHERE TradeDate <= '{target_date_obj.strftime('%Y-%m-%d %H:%M:%S')}'
+        AND ISIN IS NOT NULL
+        GROUP BY ISIN
+        HAVING ABS(SUM(Quantity)) > 0.0001
+    """
+    
     df = pd.read_sql_query(query, conn)
     
     if df.empty:
         return pd.Series(dtype=float)
-
-    # Calculate current holdings by summing up quantities
-    buy_types = ['BUY', 'TRANSFER_IN', 'STOCK_SPLIT']
-    sell_types = ['SELL', 'TRANSFER_OUT']
-
-    def adjust_quantity(row):
-        qty = row['Quantity']
-        if row['Type'] in buy_types:
-            return abs(qty)
-        elif row['Type'] in sell_types:
-            return -abs(qty)
-        return 0
-
-    df['AdjustedQuantity'] = df.apply(adjust_quantity, axis=1)
-    
-    holdings = df.groupby('ISIN')['AdjustedQuantity'].sum()
-    
-    return holdings[holdings > 0.0001]
+        
+    # Return as a Series indexed by ISIN to match previous interface
+    return df.set_index('ISIN')['NetQuantity']
 
 def get_cash_balance_on_date(conn, target_date):
     """
@@ -154,7 +151,7 @@ def get_cash_balance_on_date(conn, target_date):
             total_cash_nok += amount
         else:
             # Convert foreign currency cash balance to NOK using rate at target_date
-            rate = get_historical_exchange_rate(currency, 'NOK', target_date_obj)
+            rate = get_exchange_rate(currency, 'NOK', target_date_obj)
             if rate is not None and rate > 0:
                 total_cash_nok += amount * rate
                 
@@ -201,7 +198,7 @@ def get_securities_value_on_date(conn, isin_map, target_date):
             if security_currency == 'NOK':
                 price_nok = price_local
             else:
-                rate = get_historical_exchange_rate(security_currency, 'NOK', target_date)
+                rate = get_exchange_rate(security_currency, 'NOK', target_date)
                 if rate is not None and rate > 0:
                     price_nok = price_local * rate
         

@@ -4,23 +4,20 @@ import sys
 import os
 
 # Add the parent directory to sys.path
-current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # This is scripts/analysis
+current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # This is scripts/dashboard
 project_root = os.path.dirname(os.path.dirname(current_dir)) # This is project root
 sys.path.append(project_root)
 
-from scripts.analysis.generate_summary_report import generate_summary_report
+from scripts.dashboard.sidebar import render_sidebar, load_summary_data
 
 st.set_page_config(page_title="Portfolio Holdings", page_icon="📊", layout="wide")
 
-@st.cache_data(ttl=300)
-def load_holdings():
-    df, _, _ = generate_summary_report(verbose=False)
-    return df
+render_sidebar()
 
 st.title("📊 Current Holdings")
 
 try:
-    df = load_holdings()
+    df, _, _ = load_summary_data()
 except Exception as e:
     st.error(f"Error loading holdings: {e}")
     st.stop()

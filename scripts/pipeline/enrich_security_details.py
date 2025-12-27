@@ -1,3 +1,10 @@
+import sys
+import os
+
+# Ensure shared directory is in path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from scripts.shared.db import get_db_connection
 import sqlite3
 import yfinance as yf
 import pandas as pd
@@ -38,8 +45,7 @@ def enrich_security_details():
     Fetches details for each security using yfinance and populates
     Sector, Region, and Country in the isin_symbol_map table.
     """
-    db_file = 'database/portfolio.db'
-    conn = sqlite3.connect(db_file)
+    conn = get_db_connection()
     # Use a dictionary cursor to easily access columns by name
     conn.row_factory = sqlite3.Row
     c = conn.cursor()

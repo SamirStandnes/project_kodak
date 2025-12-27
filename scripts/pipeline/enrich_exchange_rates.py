@@ -1,18 +1,23 @@
-
 import sqlite3
 import pandas as pd
-from utils import get_exchange_rate
+import sys
+import os
+
+# Ensure shared directory is in path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from scripts.shared.market_data import get_exchange_rate
+from scripts.shared.db import get_db_connection
 
 def enrich_missing_exchange_rates():
     """
     Scans the database for transactions with missing exchange rates
     and enriches them by fetching historical rates.
     """
-    db_file = 'database/portfolio.db'
     conn = None
     updated_count = 0
     try:
-        conn = sqlite3.connect(db_file)
+        conn = get_db_connection()
         c = conn.cursor()
 
         # Find transactions that need enrichment
@@ -40,7 +45,6 @@ def enrich_missing_exchange_rates():
             print(f"Fetching rate for {global_id} ({currency_local} to NOK on {trade_date})...", end='')
             
             # Use the new utility function to get the historical rate
-            # We assume the base currency for the cost is always NOK
             historical_rate = get_exchange_rate(currency_local, target_currency='NOK', date=trade_date)
             
             if historical_rate:

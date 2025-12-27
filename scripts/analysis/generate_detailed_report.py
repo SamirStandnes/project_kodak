@@ -1,8 +1,13 @@
-import sqlite3
 import pandas as pd
 from collections import deque
-# We will need this for the *current* market value, but not for historical costs
-from scripts.pipeline.utils import get_exchange_rate 
+import sys
+import os
+
+# Ensure shared directory is in path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from scripts.shared.market_data import get_exchange_rate, get_current_prices_from_db
+from scripts.shared.db import get_db_connection
 
 # --- WAC Calculation ---
 
@@ -119,8 +124,7 @@ def generate_portfolio_report():
     """
     Generates and prints a detailed portfolio report on the fly, with all values in NOK.
     """
-    db_file = 'database/portfolio.db'
-    conn = sqlite3.connect(db_file)
+    conn = get_db_connection()
     c = conn.cursor()
 
     # Get current holdings
@@ -132,6 +136,9 @@ def generate_portfolio_report():
         HAVING SUM(Quantity) > 0
     ''')
     holdings = c.fetchall()
+    
+    # Load current prices
+    price_map = get_current_prices_from_db(conn)
 
     portfolio_data = []
     unpriced_securities = []
@@ -147,14 +154,12 @@ def generate_portfolio_report():
         avg_wac_nok = calculate_average_wac_in_nok(conn, isin, account_id)
         fifo_wac_nok = calculate_fifo_wac_in_nok(conn, isin, account_id)
 
-        # Get current price
-        c.execute('SELECT Price FROM current_prices WHERE ISIN = ?', (isin,))
-        price_result = c.fetchone()
-        price_local = price_result[0] if price_result else 0
+        # Get current price from snapshot
+        price_local = price_map.get(isin, 0)
         
         price_nok = 0
         if price_local > 0 and security_currency:
-            latest_rate = get_exchange_rate(security_currency) # Use the new function
+            latest_rate = get_exchange_rate(security_currency) 
             if latest_rate:
                 price_nok = price_local * latest_rate
         
@@ -206,14 +211,20 @@ def generate_portfolio_report():
     for account in sorted(df['AccountID'].unique()):
         account_df = df[df['AccountID'] == account].copy()
         
+        # Scale MarketValue to Millions for the table
+        account_df['MarketValue_NOK_M'] = account_df['MarketValue_NOK'] / 1e6
+        
         # Format the numbers
-        for col in ["AvgWAC_NOK", "FIFO_WAC_NOK", "MarketValue_NOK"]:
+        for col in ["AvgWAC_NOK", "FIFO_WAC_NOK"]:
              account_df[col] = account_df[col].map('{:,.2f}'.format)
+        
+        account_df['MarketValue_M'] = account_df['MarketValue_NOK_M'].map('{:.2f}M'.format)
         account_df['Avg_Return'] = account_df['Avg_Return'].map('{:.2f}%'.format)
         account_df['FIFO_Return'] = account_df['FIFO_Return'].map('{:.2f}%'.format)
 
         print(f"\n--- Account: {account} ---")
-        print(account_df[display_cols].to_string(index=False))
+        display_cols_account = ["Symbol", "Quantity", "AvgWAC_NOK", "FIFO_WAC_NOK", "MarketValue_M", "Avg_Return", "FIFO_Return"]
+        print(account_df[display_cols_account].to_string(index=False))
         
         account_avg_cost_basis = df[df['AccountID'] == account]["AvgCostBasis_NOK"].sum()
         account_fifo_cost_basis = df[df['AccountID'] == account]["FIFOCostBasis_NOK"].sum()
@@ -225,7 +236,7 @@ def generate_portfolio_report():
         account_fifo_gain_loss = account_market_value - account_fifo_cost_basis
         account_fifo_return_pct = (account_fifo_gain_loss / account_fifo_cost_basis) * 100 if account_fifo_cost_basis > 0 else 0
         
-        print(f"\n  Account Market Value: {account_market_value:,.2f} NOK")
+        print(f"\n  Account Market Value: {account_market_value/1e6:.2f}M NOK")
         print(f"  Account Avg Return: {account_avg_return_pct:.2f}%")
         print(f"  Account FIFO Return: {account_fifo_return_pct:.2f}%")
     
@@ -246,8 +257,8 @@ def generate_portfolio_report():
     total_fifo_gain_loss = total_market_value - total_fifo_cost_basis
     total_fifo_return_pct = (total_fifo_gain_loss / total_fifo_cost_basis) * 100 if total_fifo_cost_basis > 0 else 0
 
-    print("\n\n--- Total Portfolio Summary (in NOK) ---")
-    print(f"Total Market Value: {total_market_value:,.2f} NOK")
+    print("\n\n--- Total Portfolio Summary (M NOK) ---")
+    print(f"Total Market Value: {total_market_value/1e6:.2f}M NOK")
     print(f"Total Avg Cost Return: {total_avg_return_pct:.2f}%")
     print(f"Total FIFO Return: {total_fifo_return_pct:.2f}%")
 
