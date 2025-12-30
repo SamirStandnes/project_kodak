@@ -1,123 +1,84 @@
 import yfinance as yf
 import pandas as pd
-from datetime import datetime, timedelta
-import sys
-from .db import get_db_connection
+from datetime import datetime
+from typing import List, Dict, Tuple
+from scripts.shared.db import get_connection, execute_batch, execute_query
 
-# Caches
-exchange_rates_cache = {}
-price_cache = {}
-
-def get_current_prices_from_db(conn=None):
+def get_latest_prices(instrument_ids: List[int]) -> Dict[int, Tuple[float, str]]:
     """
-    Fetches the latest snapshot of prices from the current_prices table.
-    Returns a dictionary {ISIN: Price}.
+    Fetches latest price. Returns {id: (price, currency)}.
     """
-    should_close = False
-    if conn is None:
-        conn = get_db_connection()
-        should_close = True
-        
-    try:
-        df = pd.read_sql_query("SELECT ISIN, Price FROM current_prices", conn)
-        return df.set_index('ISIN')['Price'].to_dict()
-    finally:
-        if should_close:
-            conn.close()
-
-def get_historical_price(ticker_symbol, date):
-    """
-    Fetches the closing price for a given ticker symbol on a specific date using yfinance.
-    Includes a 7-day lookback for resilience against non-trading days.
-    """
-    date_str = date.strftime('%Y-%m-%d')
-    cache_key = f"{ticker_symbol}-{date_str}"
+    conn = get_connection()
+    placeholders = ','.join(['?'] * len(instrument_ids))
     
-    if cache_key in price_cache:
-        return price_cache[cache_key]
+    # Get Symbol AND Currency from Instruments
+    query = f"SELECT id, symbol, currency FROM instruments WHERE id IN ({placeholders})"
+    rows = execute_query(query, tuple(instrument_ids))
+    
+    id_map = {row['symbol']: {'id': row['id'], 'currency': row['currency']} for row in rows if row['symbol']}
+    symbols = list(id_map.keys())
+    
+    if not symbols:
+        return {}
 
+    print(f"Fetching prices for {len(symbols)} symbols...")
     try:
-        end_date = pd.to_datetime(date) + timedelta(days=1)
-        start_date = end_date - timedelta(days=14) 
-        
-        ticker = yf.Ticker(ticker_symbol)
-        hist = ticker.history(start=start_date, end=end_date, auto_adjust=False, back_adjust=False)
-        
-        if hist.empty:
-            price_cache[cache_key] = None
-            return None
-            
-        price = hist['Close'].iloc[-1]
-        price_cache[cache_key] = price
-        return price
+        data = yf.download(symbols, period="5d", progress=False)['Close']
     except Exception as e:
-        print(f"Warning: Could not get price for {ticker_symbol} on {date_str}: {e}", file=sys.stderr)
-        price_cache[cache_key] = None
-        return None
+        print(f"Error fetching data: {e}")
+        return {}
 
-def get_exchange_rate(base_currency, target_currency='NOK', date=None):
+    results = {}
+    
+    # Helper to safe get
+    def get_val(sym):
+        if isinstance(data, pd.Series):
+             return float(data.dropna().iloc[-1]) if not data.dropna().empty else 0.0
+        if sym in data.columns:
+             series = data[sym].dropna()
+             if not series.empty:
+                 return float(series.iloc[-1])
+        return 0.0
+
+    for symbol in symbols:
+        price = get_val(symbol)
+        if price > 0:
+            meta = id_map[symbol]
+            # Use the currency from our DB, as Yahoo doesn't reliably return it in simple download
+            results[meta['id']] = (price, meta['currency'])
+
+    return results
+
+def store_prices(prices: Dict[int, Tuple[float, str]], date_str: str = None):
+    if not date_str:
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        
+    data_to_insert = []
+    for inst_id, (price, currency) in prices.items():
+        data_to_insert.append((inst_id, date_str, price, currency, 'yfinance'))
+        
+    execute_batch('''
+        INSERT OR REPLACE INTO market_prices (instrument_id, date, close, currency, source)
+        VALUES (?, ?, ?, ?, ?)
+    ''', data_to_insert)
+    print(f"Stored {len(data_to_insert)} prices.")
+
+def get_exchange_rate(from_curr: str, to_curr: str) -> float:
     """
-    Gets the exchange rate for a given date.
-    If date is None, fetches the latest rate (live).
+    Fetches the current exchange rate from Yahoo Finance.
     """
-    if not base_currency or base_currency == target_currency:
+    if not from_curr or not to_curr or from_curr == to_curr:
         return 1.0
-
-    # Handle HKD conversion via USD cross-rate
-    if base_currency == 'HKD' and target_currency == 'NOK':
-        usd_nok = get_exchange_rate('USD', 'NOK', date)
-        hkd_usd = get_exchange_rate('HKD', 'USD', date)
-        if usd_nok and hkd_usd:
-            return usd_nok * hkd_usd
-        else:
-            return None
-
-    ticker = f"{base_currency}{target_currency}=X"
-    
-    # Handle date format
-    date_str = None
-    if date:
-        if isinstance(date, str):
-            date_str = date.split(' ')[0]
-        elif isinstance(date, datetime):
-            date_str = date.strftime('%Y-%m-%d')
-            
-    cache_key = f"{ticker}-{date_str}" if date_str else ticker
-
-    if cache_key in exchange_rates_cache:
-        return exchange_rates_cache[cache_key]
-
-    try:
-        if date_str:
-            # Historical
-            # Reuse get_historical_price logic? No, yfinance ticker format is same but simpler to keep explicit
-            start_date = date_str
-            end_date_obj = datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=1)
-            end_date = end_date_obj.strftime('%Y-%m-%d')
-            rate_data = yf.Ticker(ticker).history(start=start_date, end=end_date)
-        else:
-            # Live
-            rate_data = yf.Ticker(ticker).history(period="1d")
         
-        if not rate_data.empty:
-            rate = rate_data['Close'].iloc[-1] # Use last available
-            exchange_rates_cache[cache_key] = rate
-            return rate
-        else:
-            # Fallback for historical lookup if empty (weekend)
-            if date_str:
-                dt = datetime.strptime(date_str, '%Y-%m-%d')
-                for i in range(1, 5):
-                    prev_date = (dt - timedelta(days=i)).strftime('%Y-%m-%d')
-                    rate = get_exchange_rate(base_currency, target_currency, prev_date)
-                    if rate: 
-                        return rate
-            return None
-            
-    except Exception as e:
-        print(f"Warning: Error fetching rate for {ticker}: {e}")
-        return None
-
-# Alias for compatibility if needed, but we should refactor consumers to use get_exchange_rate
-def get_historical_exchange_rate(base_currency, target_currency, date):
-    return get_exchange_rate(base_currency, target_currency, date)
+    pair = f"{from_curr}{to_curr}=X"
+    try:
+        ticker = yf.Ticker(pair)
+        hist = ticker.history(period="1d")
+        if not hist.empty:
+            return float(hist['Close'].iloc[-1])
+    except:
+        pass
+        
+    # Fallback to common crosses if needed or log error
+    print(f"Warning: Could not fetch rate for {pair}. Using 1.0")
+    return 1.0

@@ -386,6 +386,12 @@ def process_new_transactions():
 
     # 4. Push to Staging
     final_df = pd.DataFrame(rows_to_stage)
+    
+    # SQLite Compatibility: Convert Timestamps to Strings
+    for col in ['TradeDate', 'SettlementDate']:
+        if col in final_df.columns:
+            final_df[col] = pd.to_datetime(final_df[col], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S')
+
     # Drop temp columns if they exist
     cols_to_drop = ['SourceFile', 'SourceLine']
     final_df = final_df.drop(columns=[c for c in cols_to_drop if c in final_df.columns])
