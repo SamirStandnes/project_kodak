@@ -1,6 +1,8 @@
 import sqlite3
 import os
 import logging
+import shutil
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 # --- Configuration ---
@@ -14,6 +16,22 @@ def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row  # Access columns by name
     return conn
+
+def create_backup(label: str = "manual") -> str:
+    """Creates a timestamped backup of the database."""
+    backup_dir = os.path.join(os.path.dirname(DB_PATH), 'backups')
+    os.makedirs(backup_dir, exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = os.path.join(backup_dir, f"portfolio_{label}_{timestamp}.db")
+    
+    try:
+        shutil.copy2(DB_PATH, backup_path)
+        logging.info(f"Backup created: {backup_path}")
+        return backup_path
+    except Exception as e:
+        logging.error(f"Backup failed: {e}")
+        raise
 
 def execute_query(query: str, params: tuple = ()) -> List[sqlite3.Row]:
     """Executes a read-only query and returns all results."""

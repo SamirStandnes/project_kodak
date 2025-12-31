@@ -1,3 +1,10 @@
+import sys
+from pathlib import Path
+# Add project root to sys.path
+root_path = str(Path(__file__).resolve().parent.parent.parent.parent)
+if root_path not in sys.path:
+    sys.path.append(root_path)
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px

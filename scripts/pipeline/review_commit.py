@@ -1,5 +1,5 @@
 import pandas as pd
-from scripts.shared.db import get_connection, execute_non_query, execute_scalar, execute_query
+from scripts.shared.db import get_connection, execute_non_query, execute_scalar, execute_query, create_backup
 
 def review_and_commit():
     conn = get_connection()
@@ -55,6 +55,7 @@ def review_and_commit():
         execute_non_query("DELETE FROM transactions_staging")
         print("Staging cleared.")
     elif choice == 'y':
+        create_backup("before_commit")
         _commit_data(df, unknown_accs, unknown_insts)
     else:
         print("Operation cancelled.")
@@ -103,12 +104,12 @@ def _commit_data(df, new_accs, new_isins):
                 INSERT INTO transactions (
                     external_id, account_id, instrument_id, date, type,
                     quantity, price, amount, currency,
-                    amount_local, exchange_rate, fee, fee_currency, fee_local, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    amount_local, exchange_rate, fee, fee_currency, fee_local, notes, batch_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 row['external_id'], acc_id, inst_id, row['date'], row['type'],
                 row['quantity'], row['price'], row['amount'], row['currency'],
-                row['amount_local'], row['exchange_rate'], row['fee'], row.get('fee_currency'), row.get('fee_local'), row['description']
+                row['amount_local'], row['exchange_rate'], row['fee'], row.get('fee_currency'), row.get('fee_local'), row['description'], row.get('batch_id')
             ))
             count += 1
             

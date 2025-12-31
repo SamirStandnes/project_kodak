@@ -17,16 +17,25 @@ def map_isins():
     
     updates = 0
     for _, row in df_map.iterrows():
-        isin = row['ISIN']
-        symbol = row['Symbol']
-        currency = row['Currency']
+        isin = row['isin']
+        symbol = row['symbol']
+        currency = row['currency']
+        sector = row.get('sector')
+        region = row.get('region')
+        country = row.get('country')
+        asset_class = row.get('asset_class')
         
         # Update instrument
         cursor.execute("""
             UPDATE instruments 
-            SET symbol = ?, currency = ?
+            SET symbol = ?, 
+                currency = ?,
+                sector = ?,
+                region = ?,
+                country = ?,
+                asset_class = ?
             WHERE isin = ?
-        """, (symbol, currency, isin))
+        """, (symbol, currency, sector, region, country, asset_class, isin))
         
         if cursor.rowcount > 0:
             updates += cursor.rowcount

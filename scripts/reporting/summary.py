@@ -3,7 +3,7 @@ from datetime import datetime
 from rich.console import Console
 from rich.table import Table
 from scripts.shared.db import get_connection, execute_query, execute_scalar
-from scripts.reporting.portfolio import get_holdings
+from scripts.shared.calculations import get_holdings
 from scripts.shared.market_data import get_exchange_rate
 
 def generate_summary():

@@ -1,6 +1,7 @@
 import os
 import glob
 import pandas as pd
+import logging
 from datetime import datetime
 from scripts.shared.utils import setup_logging, generate_txn_hash
 from scripts.shared.db import get_connection, execute_non_query, execute_query
@@ -11,6 +12,7 @@ ARCHIVE_PATH = os.path.join(RAW_PATH, 'archive')
 
 def run_ingestion():
     log_file = setup_logging("ingest_new")
+    logging.info(f"Starting ingestion process. Log file: {log_file}")
     conn = get_connection()
     
     # 1. Find Files
@@ -18,24 +20,28 @@ def run_ingestion():
     files = [f for f in files if os.path.isfile(f) and not os.path.basename(f).startswith('.')]
     
     if not files:
-        print("No new files found in data/new_raw_transactions.")
+        logging.info("No new files found in data/new_raw_transactions.")
         return
 
-    print(f"Found {len(files)} files to process.")
+    logging.info(f"Found {len(files)} files to process.")
     
+    # Generate Batch ID
+    batch_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    logging.info(f"Generated Batch ID: {batch_id}")
+
     # 2. Parse All
     all_rows = []
     for f in files:
-        print(f"Parsing {os.path.basename(f)}...")
+        logging.info(f"Parsing {os.path.basename(f)}...")
         if f.endswith('.csv'):
             all_rows.extend(parse_nordnet(f))
         elif f.endswith('.xlsx'):
             all_rows.extend(parse_saxo(f))
         else:
-            print(f"Skipping unknown file type: {f}")
+            logging.warning(f"Skipping unknown file type: {f}")
 
     if not all_rows:
-        print("No rows extracted.")
+        logging.warning("No rows extracted.")
         return
 
     # 3. Load Existing Hashes (Deduplication)
@@ -74,9 +80,10 @@ def run_ingestion():
             continue
             
         item['hash'] = h
+        item['batch_id'] = batch_id
         to_stage.append(item)
 
-    print(f"Staging {len(to_stage)} transactions (Skipped {skipped} duplicates).")
+    logging.info(f"Staging {len(to_stage)} transactions (Skipped {skipped} duplicates).")
     
     if not to_stage:
         return
@@ -102,7 +109,8 @@ def run_ingestion():
             fee_local REAL,
             description TEXT,
             source_file TEXT,
-            hash TEXT
+            hash TEXT,
+            batch_id TEXT
         )
     ''')
 
@@ -116,17 +124,17 @@ def run_ingestion():
     
     try:
         df_stage.to_sql('transactions_staging', conn, if_exists='append', index=False)
-        print("Data pushed to staging.")
+        logging.info("Data pushed to staging.")
         
         # 6. Archive Files
         os.makedirs(ARCHIVE_PATH, exist_ok=True)
         for f in files:
             dest = os.path.join(ARCHIVE_PATH, os.path.basename(f))
             os.replace(f, dest) # robust move
-            print(f"Archived {os.path.basename(f)}")
+            logging.info(f"Archived {os.path.basename(f)}")
             
     except Exception as e:
-        print(f"Error writing to staging: {e}")
+        logging.error(f"Error writing to staging: {e}")
     finally:
         conn.close()
 

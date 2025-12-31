@@ -1,6 +1,6 @@
 import pandas as pd
 from scripts.shared.db import get_connection
-from scripts.reporting.portfolio import get_holdings
+from scripts.shared.calculations import get_holdings
 
 def check_gaps():
     conn = get_connection()

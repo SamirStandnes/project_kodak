@@ -37,7 +37,11 @@ def initialize_database():
             name TEXT,
             type TEXT,
             currency TEXT,
-            exchange_mic TEXT
+            exchange_mic TEXT,
+            sector TEXT,
+            region TEXT,
+            country TEXT,
+            asset_class TEXT
         )
     ''')
 
@@ -68,7 +72,8 @@ def initialize_database():
             fee_local REAL,        -- Fee converted to Account Currency
             
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            notes TEXT
+            notes TEXT,
+            batch_id TEXT
         )
     ''')
 

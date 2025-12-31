@@ -1,7 +1,16 @@
 import streamlit as st
 import pandas as pd
+import sys
+from pathlib import Path
+# Add project root to sys.path
+root_path = str(Path(__file__).resolve().parent.parent.parent.parent)
+if root_path not in sys.path:
+    sys.path.append(root_path)
+
+import streamlit as st
+import pandas as pd
 from scripts.shared.db import get_connection
-from scripts.reporting.portfolio import get_holdings
+from scripts.shared.calculations import get_holdings
 from scripts.shared.market_data import get_exchange_rate
 
 st.set_page_config(page_title="Current Holdings", page_icon="💼", layout="wide")
@@ -13,9 +22,10 @@ def load_holdings_data():
     conn = get_connection()
     df_holdings = get_holdings()
     
-    # Get latest prices
+    # Get latest prices and metadata
     prices = pd.read_sql_query('''
-        SELECT mp.instrument_id, mp.close, i.currency, COALESCE(i.symbol, i.isin) as symbol, i.name
+        SELECT mp.instrument_id, mp.close, i.currency, COALESCE(i.symbol, i.isin) as symbol, 
+               i.name, i.sector, i.region, i.country, i.asset_class
         FROM market_prices mp
         JOIN instruments i ON mp.instrument_id = i.id
         WHERE (mp.instrument_id, mp.date) IN (
@@ -32,7 +42,11 @@ def load_holdings_data():
         price_map[row['instrument_id']] = {
             'price': row['close'], 
             'currency': row['currency'],
-            'name': row['name']
+            'name': row['name'],
+            'sector': row['sector'],
+            'region': row['region'],
+            'country': row['country'],
+            'asset_class': row['asset_class']
         }
         
     data = []
@@ -67,6 +81,10 @@ def load_holdings_data():
         data.append({
             "Symbol": row['symbol'],
             "Name": mkt['name'],
+            "Sector": mkt['sector'],
+            "Region": mkt['region'],
+            "Country": mkt['country'],
+            "Type": mkt['asset_class'],
             "Qty": row['quantity'],
             "Price": price,
             "Currency": curr,

@@ -1,7 +1,14 @@
+import sys
+from pathlib import Path
+# Add project root to sys.path
+root_path = str(Path(__file__).resolve().parent.parent.parent)
+if root_path not in sys.path:
+    sys.path.append(root_path)
+
 import streamlit as st
 import pandas as pd
 from scripts.shared.db import get_connection, execute_query
-from scripts.reporting.portfolio import get_holdings
+from scripts.shared.calculations import get_holdings
 from scripts.shared.market_data import get_exchange_rate
 
 st.set_page_config(
@@ -17,10 +24,15 @@ st.title("Project Kodak: Portfolio Overview")
 def load_summary_data():
     conn = get_connection()
     
-    # 1. Holdings & Market Value
+    # 1. Holdings & Market Value (now including metadata)
     df_holdings = get_holdings()
     
-    # Get latest prices
+    # Get latest prices and metadata
+    instruments = pd.read_sql_query('''
+        SELECT id, sector, region, country, asset_class 
+        FROM instruments
+    ''', conn)
+    
     prices = pd.read_sql_query('''
         SELECT mp.instrument_id, mp.close, i.currency
         FROM market_prices mp
@@ -32,18 +44,20 @@ def load_summary_data():
         )
     ''', conn)
     
-    price_map = {}
-    for _, row in prices.iterrows():
-        price_map[row['instrument_id']] = {'price': row['close'], 'currency': row['currency']}
+    price_map = {row['instrument_id']: {'price': row['close'], 'currency': row['currency']} for _, row in prices.iterrows()}
+    meta_map = instruments.set_index('id').to_dict('index')
         
-    # Calculate Market Value
+    # Calculate Market Value & Prepare Allocation Data
     total_market_value = 0
     total_cost = 0
     fx_cache = {}
+    allocation_data = []
     
     for _, row in df_holdings.iterrows():
         inst_id = row['instrument_id']
         mkt = price_map.get(inst_id)
+        meta = meta_map.get(inst_id, {})
+        
         if mkt:
             curr = mkt['currency']
             price = mkt['price']
@@ -59,6 +73,13 @@ def load_summary_data():
             val = row['quantity'] * price * rate
             total_market_value += val
             total_cost += row['cost_basis_local']
+            
+            allocation_data.append({
+                'Market Value': val,
+                'Sector': meta.get('sector') or 'Unknown',
+                'Region': meta.get('region') or 'Unknown',
+                'Asset Class': meta.get('asset_class') or 'Equity'
+            })
 
     # 2. Cash Balance (Approximate)
     cash_rows = pd.read_sql_query("SELECT currency, SUM(amount) as total FROM transactions GROUP BY currency", conn)
@@ -90,7 +111,8 @@ def load_summary_data():
         "cash": total_cash_nok,
         "dividends": income['dividends'] or 0,
         "interest": income['interest'] or 0,
-        "fees": income['fees'] or 0
+        "fees": income['fees'] or 0,
+        "allocation": pd.DataFrame(allocation_data)
     }
 
 data = load_summary_data()
@@ -118,4 +140,22 @@ col7.metric("Total Fees", f"{data['fees']:,.0f} NOK")
 
 st.divider()
 
+# --- ALLOCATION CHARTS ---
+st.subheader("Portfolio Allocation")
+acol1, acol2 = st.columns(2)
+
+import plotly.express as px
+
+df_alloc = data['allocation']
+if not df_alloc.empty:
+    with acol1:
+        fig_sector = px.pie(df_alloc, values='Market Value', names='Sector', title='By Sector')
+        st.plotly_chart(fig_sector, use_container_width=True)
+    with acol2:
+        fig_region = px.pie(df_alloc, values='Market Value', names='Region', title='By Region')
+        st.plotly_chart(fig_region, use_container_width=True)
+else:
+    st.info("No allocation data available.")
+
+st.divider()
 st.info("💡 **Tip:** Use the sidebar to navigate to detailed views for Holdings, Dividends, Interest, and Fees.")
