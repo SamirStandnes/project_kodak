@@ -74,7 +74,8 @@ def initialize_database():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             notes TEXT,
             batch_id TEXT,
-            source_file TEXT
+            source_file TEXT,
+            hash TEXT
         )
     ''')
 
