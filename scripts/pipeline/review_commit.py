@@ -104,12 +104,12 @@ def _commit_data(df, new_accs, new_isins):
                 INSERT INTO transactions (
                     external_id, account_id, instrument_id, date, type,
                     quantity, price, amount, currency,
-                    amount_local, exchange_rate, fee, fee_currency, fee_local, notes, batch_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    amount_local, exchange_rate, fee, fee_currency, fee_local, notes, batch_id, source_file
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 row['external_id'], acc_id, inst_id, row['date'], row['type'],
                 row['quantity'], row['price'], row['amount'], row['currency'],
-                row['amount_local'], row['exchange_rate'], row['fee'], row.get('fee_currency'), row.get('fee_local'), row['description'], row.get('batch_id')
+                row['amount_local'], row['exchange_rate'], row['fee'], row.get('fee_currency'), row.get('fee_local'), row['description'], row.get('batch_id'), row.get('source_file')
             ))
             count += 1
             

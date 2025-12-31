@@ -98,8 +98,8 @@ def load_summary_data():
     income = pd.read_sql_query('''
         SELECT 
             SUM(CASE WHEN type = 'DIVIDEND' THEN amount_local ELSE 0 END) as dividends,
-            SUM(CASE WHEN type = 'INTEREST' THEN amount_local ELSE 0 END) as interest,
-            SUM(CASE WHEN type = 'FEE' THEN amount_local ELSE 0 END) as fees
+            SUM(CASE WHEN type = 'INTEREST' THEN ABS(amount_local) ELSE 0 END) as interest,
+            SUM(CASE WHEN type = 'FEE' THEN ABS(amount_local) ELSE 0 END) as fees
         FROM transactions
     ''', conn).iloc[0]
 

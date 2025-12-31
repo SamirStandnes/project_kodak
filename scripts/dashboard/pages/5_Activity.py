@@ -36,6 +36,7 @@ def load_activity_data(limit, all_txns):
             t.currency,
             t.amount_local,
             t.batch_id,
+            t.source_file,
             t.notes as description
         FROM transactions t
         JOIN accounts a ON t.account_id = a.id
@@ -67,6 +68,7 @@ st.dataframe(
         "amount": st.column_config.NumberColumn("Amount", format="%.2f"),
         "amount_local": st.column_config.NumberColumn("Amount (NOK)", format="%.2f"),
         "batch_id": st.column_config.TextColumn("Batch ID"),
+        "source_file": st.column_config.TextColumn("Source File"),
     },
     use_container_width=True,
     hide_index=True,

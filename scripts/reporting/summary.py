@@ -153,7 +153,7 @@ def generate_summary():
                     ELSE fee_local 
                 END
             ) as fees,
-            SUM(CASE WHEN type = 'INTEREST' THEN amount_local ELSE 0 END) as interest
+            SUM(CASE WHEN type = 'INTEREST' THEN ABS(amount_local) ELSE 0 END) as interest
         FROM transactions
         WHERE type IN ('DIVIDEND', 'FEE', 'INTEREST') OR fee_local > 0
     ''')[0]
