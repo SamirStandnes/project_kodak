@@ -23,8 +23,9 @@ Follow these steps to update your portfolio with new data:
     ```bash
     python -m scripts.pipeline.review_commit
     ```
-3.  **Enrichment:** Update instrument mappings, fetch latest prices, and enrich exchange rates.
+3. **Enrichment:** Update account and instrument mappings, fetch latest prices, and enrich exchange rates.
     ```bash
+    python -m scripts.pipeline.map_accounts
     python -m scripts.pipeline.map_isins
     python -m scripts.pipeline.fetch_prices
     python -m scripts.pipeline.enrich_fx
