@@ -98,6 +98,8 @@ def run_ingestion():
             amount_local REAL,
             exchange_rate REAL,
             fee REAL,
+            fee_currency TEXT,
+            fee_local REAL,
             description TEXT,
             source_file TEXT,
             hash TEXT

@@ -21,6 +21,12 @@ def parse_nordnet(file_path: str) -> List[Dict[str, Any]]:
     df['Kjøpsverdi_Clean'] = df['Kjøpsverdi'].apply(clean_num)
     df['Kurs_Clean'] = df['Kurs'].apply(clean_num)
     df['Antall_Clean'] = df['Antall'].apply(clean_num)
+    
+    # Clean Fee Rate if present
+    if 'Valutakurs' in df.columns:
+        df['Valutakurs_Clean'] = df['Valutakurs'].apply(clean_num)
+    else:
+        df['Valutakurs_Clean'] = 0.0
 
     results = []
     
@@ -98,6 +104,26 @@ def parse_nordnet(file_path: str) -> List[Dict[str, Any]]:
         # Fix for zero amount_local if rate exists
         if amount_local == 0 and amount != 0 and exchange_rate != 0:
             amount_local = amount * exchange_rate
+            
+        # Fee Logic (Capture Raw + Currency)
+        fee_raw = clean_num(row['Kurtasje_Clean'])
+        fee_currency = row.get('Valuta.4', 'NOK')
+        if pd.isna(fee_currency): fee_currency = 'NOK'
+        
+        # We try to calculate fee_local if possible, otherwise we leave it for enrichment
+        fee_local = 0.0
+        
+        if fee_currency == 'NOK':
+            fee_local = fee_raw
+        elif fee_raw != 0:
+            # Try to convert using provided rate or transaction rate
+            fee_rate = row.get('Valutakurs_Clean', 0.0)
+            if fee_rate != 0:
+                fee_local = fee_raw * fee_rate
+            elif exchange_rate != 0:
+                fee_local = fee_raw * exchange_rate
+            else:
+                fee_local = 0.0 # Needs enrichment
 
         item = {
             'external_id': str(uuid.uuid4()),
@@ -114,7 +140,9 @@ def parse_nordnet(file_path: str) -> List[Dict[str, Any]]:
             'exchange_rate': exchange_rate,
             'description': text,
             'source_file': os.path.basename(file_path),
-            'fee': clean_num(row['Kurtasje_Clean'])
+            'fee': fee_raw,
+            'fee_currency': fee_currency,
+            'fee_local': fee_local
         }
         results.append(item)
         
@@ -177,7 +205,9 @@ def parse_saxo(file_path: str) -> List[Dict[str, Any]]:
             'exchange_rate': clean_num(row['FXRate']) if 'FXRate' in row else 1.0,
             'description': text,
             'source_file': os.path.basename(file_path),
-            'fee': 0.0
+            'fee': 0.0,
+            'fee_currency': 'NOK',
+            'fee_local': 0.0
         }
         
         if match:

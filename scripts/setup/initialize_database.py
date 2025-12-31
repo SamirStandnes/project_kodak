@@ -64,6 +64,8 @@ def initialize_database():
             amount_local REAL,     -- In Account Currency (Amount_NOK)
             
             fee REAL,
+            fee_currency TEXT,
+            fee_local REAL,        -- Fee converted to Account Currency
             
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             notes TEXT

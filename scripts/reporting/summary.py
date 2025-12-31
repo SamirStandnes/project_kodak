@@ -147,9 +147,15 @@ def generate_summary():
     totals = execute_query('''
         SELECT 
             SUM(CASE WHEN type = 'DIVIDEND' THEN amount_local ELSE 0 END) as dividends,
-            SUM(CASE WHEN type = 'FEE' THEN amount_local ELSE 0 END) as fees,
+            SUM(
+                CASE 
+                    WHEN type = 'FEE' THEN ABS(amount_local) 
+                    ELSE fee_local 
+                END
+            ) as fees,
             SUM(CASE WHEN type = 'INTEREST' THEN amount_local ELSE 0 END) as interest
         FROM transactions
+        WHERE type IN ('DIVIDEND', 'FEE', 'INTEREST') OR fee_local > 0
     ''')[0]
 
     total_dividends = totals['dividends'] or 0

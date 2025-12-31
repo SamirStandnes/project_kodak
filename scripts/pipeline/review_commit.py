@@ -82,25 +82,33 @@ def _commit_data(df, new_accs, new_isins):
             # print(f"Created instrument: {row['symbol']} ({row['isin']})")
 
         # 3. Insert Transactions
-        # Prepare cache for lookups
-        acc_map = {row['external_id']: row['id'] for row in execute_query("SELECT external_id, id FROM accounts")}
-        inst_map = {row['isin']: row['id'] for row in execute_query("SELECT isin, id FROM instruments")}
+        # Prepare cache for lookups using the SAME cursor/connection to see uncommitted changes
+        cursor.execute("SELECT external_id, id FROM accounts")
+        acc_map = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        cursor.execute("SELECT isin, id FROM instruments")
+        inst_map = {row[0]: row[1] for row in cursor.fetchall()}
         
         count = 0
         for _, row in df.iterrows():
             acc_id = acc_map.get(row['account_external_id'])
             inst_id = inst_map.get(row['isin'])
             
+            # Skip if account missing (should not happen if logic above is correct)
+            if acc_id is None:
+                print(f"Error: Account {row['account_external_id']} not found in map.")
+                continue
+            
             cursor.execute('''
                 INSERT INTO transactions (
                     external_id, account_id, instrument_id, date, type,
                     quantity, price, amount, currency,
-                    amount_local, exchange_rate, fee, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    amount_local, exchange_rate, fee, fee_currency, fee_local, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 row['external_id'], acc_id, inst_id, row['date'], row['type'],
                 row['quantity'], row['price'], row['amount'], row['currency'],
-                row['amount_local'], row['exchange_rate'], row['fee'], row['description']
+                row['amount_local'], row['exchange_rate'], row['fee'], row.get('fee_currency'), row.get('fee_local'), row['description']
             ))
             count += 1
             
