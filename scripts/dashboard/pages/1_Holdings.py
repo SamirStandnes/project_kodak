@@ -80,16 +80,12 @@ def load_holdings_data():
         
         data.append({
             "Symbol": row['symbol'],
-            "Name": mkt['name'],
+            "Quantity": row['quantity'],
             "Sector": mkt['sector'],
             "Region": mkt['region'],
             "Country": mkt['country'],
             "Type": mkt['asset_class'],
-            "Qty": row['quantity'],
-            "Price": price,
-            "Currency": curr,
-            "Market Value (NOK)": market_val_nok,
-            "Avg Cost": cost_basis / row['quantity'],
+            "Market Value": market_val_nok,
             "Gain/Loss": gain,
             "Return %": ret_pct
         })
@@ -98,25 +94,23 @@ def load_holdings_data():
     
     # Calculate Weight
     if not df.empty:
-        df['Weight %'] = (df['Market Value (NOK)'] / total_val) * 100
+        df['Weight %'] = (df['Market Value'] / total_val) * 100
         
-    return df.sort_values('Market Value (NOK)', ascending=False)
+    return df.sort_values('Market Value', ascending=False)
 
 df = load_holdings_data()
 
 # Summary Metrics for this page
-st.metric("Total Equity Value", f"{df['Market Value (NOK)'].sum():,.0f} NOK")
+st.metric("Total Equity Value", f"{df['Market Value'].sum():,.1f} NOK")
 
 # Styling the dataframe
 st.dataframe(
     df,
     column_config={
-        "Qty": st.column_config.NumberColumn(format="%.2f"),
-        "Price": st.column_config.NumberColumn(format="%.2f"),
-        "Market Value (NOK)": st.column_config.NumberColumn(format="%.0f NOK"),
-        "Avg Cost": st.column_config.NumberColumn(format="%.2f"),
-        "Gain/Loss": st.column_config.NumberColumn(format="%.0f NOK"),
-        "Return %": st.column_config.NumberColumn(format="%.2f%%"),
+        "Quantity": st.column_config.NumberColumn(format="%.1f"),
+        "Market Value": st.column_config.NumberColumn(format="%.1f"),
+        "Gain/Loss": st.column_config.NumberColumn(format="%.1f"),
+        "Return %": st.column_config.NumberColumn(format="%.1f%%"),
         "Weight %": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
     },
     use_container_width=True,

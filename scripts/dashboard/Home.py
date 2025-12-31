@@ -8,7 +8,7 @@ if root_path not in sys.path:
 import streamlit as st
 import pandas as pd
 from scripts.shared.db import get_connection, execute_query
-from scripts.shared.calculations import get_holdings
+from scripts.shared.calculations import get_holdings, get_income_and_costs
 from scripts.shared.market_data import get_exchange_rate
 
 st.set_page_config(
@@ -17,7 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("Project Kodak: Portfolio Overview")
+st.title("Portfolio Overview")
 
 # --- DATA FETCHING ---
 @st.cache_data
@@ -95,23 +95,16 @@ def load_summary_data():
             total_cash_nok += amt * fx_cache[curr]
 
     # 3. Income Totals
-    income = pd.read_sql_query('''
-        SELECT 
-            SUM(CASE WHEN type = 'DIVIDEND' THEN amount_local ELSE 0 END) as dividends,
-            SUM(CASE WHEN type = 'INTEREST' THEN ABS(amount_local) ELSE 0 END) as interest,
-            SUM(CASE WHEN type = 'FEE' THEN ABS(amount_local) ELSE 0 END) as fees
-        FROM transactions
-    ''', conn).iloc[0]
-
+    income = get_income_and_costs()
     conn.close()
     
     return {
         "market_value": total_market_value,
         "cost_basis": total_cost,
         "cash": total_cash_nok,
-        "dividends": income['dividends'] or 0,
-        "interest": income['interest'] or 0,
-        "fees": income['fees'] or 0,
+        "dividends": income['dividends'],
+        "interest": income['interest'],
+        "fees": income['fees'],
         "allocation": pd.DataFrame(allocation_data)
     }
 
@@ -119,24 +112,33 @@ data = load_summary_data()
 
 # --- METRICS DISPLAY ---
 
-# Row 1: The Big Numbers
+# 1. Net Wealth Overview
+st.subheader("Net Equity Overview")
 col1, col2, col3 = st.columns(3)
 
 net_worth = data['market_value'] + data['cash']
 total_gain = data['market_value'] - data['cost_basis']
 total_return_pct = (data['market_value'] / data['cost_basis'] - 1) * 100 if data['cost_basis'] > 0 else 0
 
-col1.metric("Net Worth", f"{net_worth:,.0f} NOK")
-col2.metric("Portfolio Value (Stocks)", f"{data['market_value']:,.0f} NOK")
-col3.metric("Estimated Cash", f"{data['cash']:,.0f} NOK")
+col1.metric("Total Net Equity", f"{net_worth:,.0f} NOK")
+col2.metric("Stock Holdings", f"{data['market_value']:,.0f} NOK")
+col3.metric("Cash & Margin", f"{data['cash']:,.0f} NOK", help="Negative value indicates margin usage.")
 
-# Row 2: Performance & Income
-col4, col5, col6, col7 = st.columns(4)
+# 2. Performance & Growth
+st.subheader("Performance & Growth")
+col4, col5, col6 = st.columns(3)
 
-col4.metric("Unrealized Gain", f"{total_gain:,.0f} NOK", f"{total_return_pct:.2f}%")
-col5.metric("Total Dividends", f"{data['dividends']:,.0f} NOK")
-col6.metric("Total Interest", f"{data['interest']:,.0f} NOK")
-col7.metric("Total Fees", f"{data['fees']:,.0f} NOK")
+col4.metric("Unrealized Gain/Loss", f"{total_gain:,.0f} NOK", f"{total_return_pct:.2f}%", delta_color="normal")
+# We could add an "Invested Capital" metric here if desired
+col5.metric("Invested Capital (Cost Basis)", f"{data['cost_basis']:,.0f} NOK")
+
+# 3. Income & Costs (Cash Flow)
+st.subheader("Cash Flow (All Time)")
+col6, col7, col8 = st.columns(3)
+
+col6.metric("Total Dividends", f"{data['dividends']:,.0f} NOK", delta_color="normal")
+col7.metric("Total Interest Paid", f"{data['interest']:,.0f} NOK", delta_color="inverse")
+col8.metric("Total Fees Paid", f"{data['fees']:,.0f} NOK", delta_color="inverse")
 
 st.divider()
 

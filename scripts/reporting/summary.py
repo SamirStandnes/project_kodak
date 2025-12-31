@@ -3,7 +3,7 @@ from datetime import datetime
 from rich.console import Console
 from rich.table import Table
 from scripts.shared.db import get_connection, execute_query, execute_scalar
-from scripts.shared.calculations import get_holdings
+from scripts.shared.calculations import get_holdings, get_income_and_costs
 from scripts.shared.market_data import get_exchange_rate
 
 def generate_summary():
@@ -144,23 +144,11 @@ def generate_summary():
             cash_balance_nok += amt * rate
 
     # Calculate Totals for Dividends, Fees, Interest
-    totals = execute_query('''
-        SELECT 
-            SUM(CASE WHEN type = 'DIVIDEND' THEN amount_local ELSE 0 END) as dividends,
-            SUM(
-                CASE 
-                    WHEN type = 'FEE' THEN ABS(amount_local) 
-                    ELSE fee_local 
-                END
-            ) as fees,
-            SUM(CASE WHEN type = 'INTEREST' THEN ABS(amount_local) ELSE 0 END) as interest
-        FROM transactions
-        WHERE type IN ('DIVIDEND', 'FEE', 'INTEREST') OR fee_local > 0
-    ''')[0]
+    income = get_income_and_costs()
 
-    total_dividends = totals['dividends'] or 0
-    total_fees = totals['fees'] or 0
-    total_interest = totals['interest'] or 0
+    total_dividends = income['dividends']
+    total_fees = income['fees']
+    total_interest = income['interest']
 
     summary_table = Table(box=None, show_header=False)
     summary_table.add_column("Metric", style="bold")
