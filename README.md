@@ -94,7 +94,8 @@ streamlit run scripts/dashboard/Home.py
 
 Prefer the command line? Use these scripts for quick insights:
 - **Portfolio Summary:** `python -m scripts.analysis.analyze_portfolio` (Current Value & Unrealized Gains)
-- **Yearly Performance:** `python -m scripts.analysis.analyze_performance` (Realized Gains, Dividends, & Cash Flow)
+- **Yearly Performance:** `python -m scripts.analysis.performance.realized` (Realized Gains, Dividends, & Cash Flow)
+- **XIRR % Returns:** `python -m scripts.analysis.performance.returns` (Money-weighted returns by year)
 - **FX Analysis:** `python -m scripts.analysis.analyze_fx` (Currency P&L)
 - **Dividends/Fees/Interest:** Check `scripts/analysis/` for more specialized tools.
 

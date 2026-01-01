@@ -82,3 +82,68 @@ def get_exchange_rate(from_curr: str, to_curr: str) -> float:
     # Fallback to common crosses if needed or log error
     print(f"Warning: Could not fetch rate for {pair}. Using 1.0")
     return 1.0
+
+def get_historical_prices_by_date(symbols: List[str], target_date: str) -> Dict[str, float]:
+    """
+    Fetches closing prices for a list of symbols on or before a specific date.
+    Returns {symbol: price}.
+    """
+    if not symbols:
+        return {}
+        
+    # Fetch a small window around the date to handle weekends/holidays
+    # Look back 5 days
+    end_dt = pd.Timestamp(target_date) + pd.Timedelta(days=1)
+    start_dt = end_dt - pd.Timedelta(days=7)
+    
+    print(f"Fetching historical prices for {len(symbols)} symbols around {target_date}...")
+    
+    try:
+        # We use standard auto_adjust=True to get split-adjusted prices.
+        # We will adjust our quantities to match this scale in calculations.py.
+        df = yf.download(symbols, start=start_dt, end=end_dt, progress=False, group_by='ticker', auto_adjust=True)
+    except Exception as e:
+        print(f"Error fetching historical data: {e}")
+        return {}
+        
+    results = {}
+    
+    for sym in symbols:
+        try:
+            # Extract data for this symbol
+            if len(symbols) > 1:
+                if sym not in df.columns:
+                    continue
+                data = df[sym]['Close']
+            else:
+                data = df['Close']
+                
+            # Find last available price
+            valid_data = data.dropna()
+            if not valid_data.empty:
+                results[sym] = float(valid_data.iloc[-1])
+        except Exception:
+            pass
+    return results
+
+def get_split_history(symbols: List[str]) -> Dict[str, pd.Series]:
+    """
+    Fetches split history for a list of symbols.
+    Returns {symbol: Series of splits}.
+    """
+    if not symbols:
+        return {}
+        
+    print(f"Fetching split history for {len(symbols)} symbols...")
+    results = {}
+    
+    for sym in symbols:
+        try:
+            ticker = yf.Ticker(sym)
+            splits = ticker.splits
+            if not splits.empty:
+                results[sym] = splits
+        except Exception:
+            pass
+            
+    return results
