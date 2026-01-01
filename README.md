@@ -9,7 +9,7 @@ Portfolio tracking and analysis system.
     python -m scripts.setup.initialize_database
     ```
 2.  **Configuration:**
-    Copy `config.ini.example` to `config.ini` and fill in your SMTP details for email reporting.
+    
 
 ## Data Pipeline
 
@@ -31,15 +31,20 @@ Follow these steps to update your portfolio with new data:
     python -m scripts.pipeline.enrich_fx
     ```
 
-## Reporting
+## Dashboard & Reporting
 
-Generate reports to analyze your portfolio:
+Launch the interactive dashboard:
+```bash
+streamlit run scripts/dashboard/Home.py
+```
 
-- **Summary Report:** `python -m scripts.reporting.summary`
-- **Analysis Scripts:** Check `scripts/analysis/` for specialized scripts (Dividends, Fees, Interest).
+Or run terminal-based analysis tools:
+- **Portfolio Summary:** `python -m scripts.analysis.analyze_portfolio`
+- **FX Analysis:** `python -m scripts.analysis.analyze_fx`
+- **Other Tools:** Check `scripts/analysis/` for specialized scripts (Dividends, Fees, Interest).
 
-## TODO
+## Features
 
-- [ ] Implement interest analysis script
-- [ ] Implement fee analysis script
-- [ ] Dashboard integration for dividends
+- **Multi-Currency Support:** Handles NOK, USD, EUR, etc. with historical FX rates.
+- **Automated Pipeline:** Ingestion -> Staging -> Review -> Production.
+- **Dashboard:** Visual analysis of Holdings, Performance, Dividends, Interest, Fees, and FX P&L.
