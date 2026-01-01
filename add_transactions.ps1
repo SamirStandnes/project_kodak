@@ -9,7 +9,7 @@ Write-Host "`n[1/5] Ingesting files from data/new_raw_transactions/{nordnet,saxo
 python -m scripts.pipeline.ingest
 
 # 2. Check Staging
-$StagingCount = python -c "from scripts.shared.db import execute_scalar; print(execute_scalar(\"SELECT COUNT(*) FROM transactions_staging\") or 0)"
+$StagingCount = python -c "from scripts.shared.db import execute_scalar; print(execute_scalar('SELECT COUNT(*) FROM transactions_staging') or 0)"
 
 if ($StagingCount -eq 0) {
     Write-Host "`n[INFO] No new transactions found to process." -ForegroundColor Green

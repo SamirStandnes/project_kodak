@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from scripts.shared.utils import setup_logging, generate_txn_hash
 from scripts.shared.db import get_connection, execute_non_query, execute_query
-from scripts.pipeline.parsers import parse_nordnet, parse_saxo
+import scripts.pipeline.parsers as parsers_module
 
 RAW_PATH = os.path.join('data', 'new_raw_transactions')
 ARCHIVE_PATH = os.path.join(RAW_PATH, 'archive')
@@ -15,12 +15,15 @@ def run_ingestion():
     logging.info(f"Starting ingestion process. Log file: {log_file}")
     conn = get_connection()
     
-    # 1. Define Sources
-    sources = {
-        'nordnet': parse_nordnet,
-        'saxo': parse_saxo
-    }
+    # 1. Discover Sources Dynamically
+    # Scan for subdirectories in RAW_PATH
+    subdirs = [d for d in os.listdir(RAW_PATH) if os.path.isdir(os.path.join(RAW_PATH, d)) and d != 'archive']
     
+    if not subdirs:
+        logging.info("No source directories found in data/new_raw_transactions.")
+        conn.close()
+        return
+
     # Generate Batch ID
     batch_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     logging.info(f"Generated Batch ID: {batch_id}")
@@ -29,11 +32,16 @@ def run_ingestion():
     processed_files = [] # Tuples of (full_path, source_name)
 
     # 2. Iterate Sources
-    for source_name, parser_func in sources.items():
-        source_path = os.path.join(RAW_PATH, source_name)
+    for source_name in subdirs:
+        parser_func_name = f"parse_{source_name}"
         
-        # Create directory if it doesn't exist (convenience for user)
-        os.makedirs(source_path, exist_ok=True)
+        # Check if parser exists in parsers module
+        if not hasattr(parsers_module, parser_func_name):
+            logging.warning(f"No parser function '{parser_func_name}' found in scripts.pipeline.parsers for folder '{source_name}'. Skipping.")
+            continue
+            
+        parser_func = getattr(parsers_module, parser_func_name)
+        source_path = os.path.join(RAW_PATH, source_name)
         
         files = glob.glob(os.path.join(source_path, "*"))
         files = [f for f in files if os.path.isfile(f) and not os.path.basename(f).startswith('.')]
