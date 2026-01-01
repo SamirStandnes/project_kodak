@@ -61,14 +61,14 @@ python -m scripts.setup.initialize_database
 2.  **Place:** Move the files to the matching folder in `data/new_raw_transactions/`.
 3.  **Run Pipeline:** 
     ```powershell
-    .\add_transactions.ps1
+    .\workflows\add_transactions.ps1
     ```
     *This will ingest files, ask for confirmation to commit to the DB, and then automatically fetch prices and FX rates.*
 
 ### Refreshing Prices (No new trades)
 To see how your portfolio is doing today without adding new data:
 ```powershell
-.\refresh_market_data.ps1
+.\workflows\refresh_market_data.ps1
 ```
 
 ### Launching the Dashboard
@@ -96,3 +96,6 @@ Project Kodak is designed to be infinitely extensible. To add a new broker (e.g.
 
 ## ⚖️ License
 MIT License - feel free to use and modify!
+
+---
+👀 **Curious about what's next?** Check out our [ROADMAP](ROADMAP.md)!

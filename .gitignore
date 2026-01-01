@@ -2,23 +2,12 @@
 __pycache__/
 *.pyc
 
-# Local Config
-config.ini
-
 # Database (data, not code)
 database/
 
 # Raw Data and Logs
 data/logs/
 data/new_raw_transactions/
-data/transactions-and-notes-export (1).csv
-
-# Generated Output
-reports/*
-!reports/.gitkeep
-
-# Temporary Charts
-reports/temp_charts/
 
 # Virtual environment
 .venv/

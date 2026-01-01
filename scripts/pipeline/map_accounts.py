@@ -10,7 +10,7 @@ if root_path not in sys.path:
 
 from scripts.shared.db import get_connection
 
-ACCOUNTS_MAP_PATH = os.path.join('data', 'reference', 'accounts.csv')
+ACCOUNTS_MAP_PATH = os.path.join('data', 'reference', 'accounts_map.csv')
 
 def map_accounts():
     if not os.path.exists(ACCOUNTS_MAP_PATH):
@@ -42,7 +42,7 @@ def map_accounts():
             
     conn.commit()
     conn.close()
-    print(f"Updated {updates} accounts based on accounts.csv.")
+    print(f"Updated {updates} accounts based on accounts_map.csv.")
 
 if __name__ == "__main__":
     map_accounts()
