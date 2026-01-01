@@ -103,7 +103,7 @@ def get_interest_details():
         ORDER BY total DESC
     """, conn)
     
-    # 3. Largest Payments
+    # 3. Recent Payments
     df_top = pd.read_sql_query("""
         SELECT 
             date, 
@@ -113,8 +113,8 @@ def get_interest_details():
             source_file
         FROM transactions
         WHERE type = 'INTEREST'
-        ORDER BY amount_local DESC
-        LIMIT 20
+        ORDER BY date DESC
+        LIMIT 50
     """, conn)
     
     conn.close()
@@ -161,7 +161,7 @@ def get_fee_details():
         ORDER BY total DESC
     """, conn)
 
-    # 3. Largest Fees
+    # 3. Recent Fees
     df_top = pd.read_sql_query("""
         SELECT 
             date, 
@@ -170,16 +170,91 @@ def get_fee_details():
                 WHEN type = 'FEE' THEN ABS(amount_local) 
                 ELSE fee_local 
             END as amount_local,
-            source_file,
-            notes as description
+            source_file
         FROM transactions
         WHERE type = 'FEE' OR fee_local > 0
-        ORDER BY amount_local DESC
-        LIMIT 20
+        ORDER BY date DESC
+        LIMIT 50
     """, conn)
     
     conn.close()
     return df_yearly, df_currency, df_top
+
+def get_fx_performance():
+    """
+    Calculates Realized P&L, Remaining Holdings, and Cost Basis for FX trades.
+    Returns a DataFrame.
+    """
+    conn = get_connection()
+    
+    # Fetch all FX transactions for non-NOK currencies
+    query = """
+        SELECT 
+            date,
+            currency,
+            amount as quantity,
+            amount_local
+        FROM transactions
+        WHERE type = 'CURRENCY_EXCHANGE' 
+          AND currency != 'NOK'
+        ORDER BY date, id
+    """
+    
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    
+    if df.empty:
+        return pd.DataFrame()
+
+    results = []
+    
+    # Process each currency
+    for currency, group in df.groupby('currency'):
+        holdings = 0.0
+        total_cost = 0.0
+        realized_pl = 0.0
+        
+        # Sort just in case
+        group = group.sort_values('date')
+        
+        for _, row in group.iterrows():
+            qty = row['quantity']
+            val_nok = row['amount_local']
+            
+            if qty > 0:
+                # BUY (Inflow of Foreign Currency)
+                holdings += qty
+                total_cost += val_nok
+                
+            elif qty < 0:
+                # SELL (Outflow of Foreign Currency)
+                if holdings <= 0:
+                    cost_portion = 0
+                else:
+                    portion = abs(qty) / holdings
+                    portion = min(portion, 1.0)
+                    cost_portion = total_cost * portion
+                
+                proceeds = abs(val_nok)
+                gain = proceeds - cost_portion
+                realized_pl += gain
+                
+                # Update Inventory
+                holdings += qty 
+                total_cost -= cost_portion
+                
+                if abs(holdings) < 0.01:
+                    holdings = 0
+                    total_cost = 0
+        
+        results.append({
+            'currency': currency,
+            'realized_pl_nok': realized_pl,
+            'holdings': holdings,
+            'cost_basis_nok': total_cost
+        })
+        
+    return pd.DataFrame(results)
 
 def get_holdings(date=None):
     """

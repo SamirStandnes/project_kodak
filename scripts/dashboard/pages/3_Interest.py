@@ -32,15 +32,26 @@ with col1:
 
 with col2:
     st.subheader("Interest by Currency")
-    st.bar_chart(df_currency.set_index('currency'))
+    st.dataframe(
+        df_currency,
+        column_config={
+            "currency": st.column_config.TextColumn("Currency"),
+            "total": st.column_config.NumberColumn("Total Interest (NOK)", format="%.1f"),
+        },
+        use_container_width=True,
+        hide_index=True
+    )
 
 # Table
-st.subheader("Largest Interest Payments")
+st.subheader("Recent Interest Payments")
 st.dataframe(
     df_top,
     column_config={
-        "amount": st.column_config.NumberColumn(format="%.1f"),
-        "amount_local": st.column_config.NumberColumn(format="%.1f"),
+        "date": st.column_config.DateColumn("Date"),
+        "currency": st.column_config.TextColumn("Curr"),
+        "amount": st.column_config.NumberColumn("Amount (Orig)", format="%.1f"),
+        "amount_local": st.column_config.NumberColumn("Amount (NOK)", format="%.1f"),
+        "source_file": st.column_config.TextColumn("Source"),
     },
     use_container_width=True,
     hide_index=True

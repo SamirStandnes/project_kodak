@@ -40,7 +40,8 @@ with col3:
     st.dataframe(
         df_all_time.head(15),
         column_config={
-            "total": st.column_config.NumberColumn(format="%.1f"),
+            "symbol": st.column_config.TextColumn("Instrument"),
+            "total": st.column_config.NumberColumn("Total Payout (NOK)", format="%.1f"),
         },
         use_container_width=True,
         hide_index=True
@@ -51,7 +52,8 @@ with col4:
     st.dataframe(
         df_2025,
         column_config={
-            "total": st.column_config.NumberColumn(format="%.1f"),
+            "symbol": st.column_config.TextColumn("Instrument"),
+            "total": st.column_config.NumberColumn("Total Payout (NOK)", format="%.1f"),
         },
         use_container_width=True,
         hide_index=True

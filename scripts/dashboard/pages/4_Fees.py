@@ -32,15 +32,25 @@ with col1:
 
 with col2:
     st.subheader("Fees by Currency")
-    st.bar_chart(df_currency.set_index('currency'))
+    st.dataframe(
+        df_currency,
+        column_config={
+            "currency": st.column_config.TextColumn("Currency"),
+            "total": st.column_config.NumberColumn("Total Fees (NOK)", format="%.1f"),
+        },
+        use_container_width=True,
+        hide_index=True
+    )
 
 # Table
-st.subheader("Largest Fees")
+st.subheader("Recent Fees")
 st.dataframe(
     df_top,
     column_config={
-        "amount_local": st.column_config.NumberColumn("Amount", format="%.1f"),
-        "source_file": st.column_config.TextColumn("Source File"),
+        "date": st.column_config.DateColumn("Date"),
+        "currency": st.column_config.TextColumn("Curr"),
+        "amount_local": st.column_config.NumberColumn("Fee (NOK)", format="%.1f"),
+        "source_file": st.column_config.TextColumn("Source"),
     },
     use_container_width=True,
     hide_index=True
