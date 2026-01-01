@@ -15,9 +15,13 @@ Portfolio tracking and analysis system.
 
 Follow these steps to update your portfolio with new data:
 
-1.  **Ingestion:** Place raw Nordnet (.csv) or Saxo (.xlsx) files in `data/new_raw_transactions/`.
+1.  **Ingestion:** Place raw files in the appropriate folder:
+    -   Nordnet (.csv): `data/new_raw_transactions/nordnet/`
+    -   Saxo (.xlsx): `data/new_raw_transactions/saxo/`
+    
+    Then run:
     ```bash
-    python -m scripts.pipeline.ingest
+    .\add_transactions.ps1
     ```
 2.  **Review and Commit:** Verify the staged data and commit it to the master ledger. This automatically creates a database backup.
     ```bash

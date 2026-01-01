@@ -15,33 +15,46 @@ def run_ingestion():
     logging.info(f"Starting ingestion process. Log file: {log_file}")
     conn = get_connection()
     
-    # 1. Find Files
-    files = glob.glob(os.path.join(RAW_PATH, "*"))
-    files = [f for f in files if os.path.isfile(f) and not os.path.basename(f).startswith('.')]
-    
-    if not files:
-        logging.info("No new files found in data/new_raw_transactions.")
-        return
-
-    logging.info(f"Found {len(files)} files to process.")
+    # 1. Define Sources
+    sources = {
+        'nordnet': parse_nordnet,
+        'saxo': parse_saxo
+    }
     
     # Generate Batch ID
     batch_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     logging.info(f"Generated Batch ID: {batch_id}")
 
-    # 2. Parse All
     all_rows = []
-    for f in files:
-        logging.info(f"Parsing {os.path.basename(f)}...")
-        if f.endswith('.csv'):
-            all_rows.extend(parse_nordnet(f))
-        elif f.endswith('.xlsx'):
-            all_rows.extend(parse_saxo(f))
-        else:
-            logging.warning(f"Skipping unknown file type: {f}")
+    processed_files = [] # Tuples of (full_path, source_name)
+
+    # 2. Iterate Sources
+    for source_name, parser_func in sources.items():
+        source_path = os.path.join(RAW_PATH, source_name)
+        
+        # Create directory if it doesn't exist (convenience for user)
+        os.makedirs(source_path, exist_ok=True)
+        
+        files = glob.glob(os.path.join(source_path, "*"))
+        files = [f for f in files if os.path.isfile(f) and not os.path.basename(f).startswith('.')]
+        
+        if not files:
+            continue
+            
+        logging.info(f"Found {len(files)} files in '{source_name}'.")
+        
+        for f in files:
+            logging.info(f"Parsing {os.path.basename(f)} using {source_name} parser...")
+            try:
+                rows = parser_func(f)
+                all_rows.extend(rows)
+                processed_files.append((f, source_name))
+            except Exception as e:
+                logging.error(f"Failed to parse {f}: {e}")
 
     if not all_rows:
-        logging.warning("No rows extracted.")
+        logging.info("No rows extracted from any files.")
+        conn.close()
         return
 
     # 3. Load Existing Hashes (Deduplication)
@@ -127,11 +140,20 @@ def run_ingestion():
         logging.info("Data pushed to staging.")
         
         # 6. Archive Files
-        os.makedirs(ARCHIVE_PATH, exist_ok=True)
-        for f in files:
-            dest = os.path.join(ARCHIVE_PATH, os.path.basename(f))
-            os.replace(f, dest) # robust move
-            logging.info(f"Archived {os.path.basename(f)}")
+        for f_path, source_name in processed_files:
+            # Create archive/nordnet/ etc.
+            dest_dir = os.path.join(ARCHIVE_PATH, source_name)
+            os.makedirs(dest_dir, exist_ok=True)
+            
+            dest = os.path.join(dest_dir, os.path.basename(f_path))
+            
+            # Handle duplicates in archive by appending timestamp if needed
+            if os.path.exists(dest):
+                base, ext = os.path.splitext(os.path.basename(f_path))
+                dest = os.path.join(dest_dir, f"{base}_{batch_id}{ext}")
+            
+            os.replace(f_path, dest)
+            logging.info(f"Archived {os.path.basename(f_path)} to {source_name}/")
             
     except Exception as e:
         logging.error(f"Error writing to staging: {e}")
