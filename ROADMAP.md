@@ -36,6 +36,11 @@ This document outlines the future direction of Project Kodak. We aim to make por
 ### 3. ☁️ Optional Cloud Sync
 *   Ability to securely backup the SQLite database to Google Drive or Dropbox.
 
+### 4. 🌐 Cloud Deployment (Web App)
+*   **Goal:** Access your portfolio dashboard from your phone or any browser.
+*   **Method:** Dockerize the application for easy deployment to AWS, Heroku, or Streamlit Cloud.
+*   **Security:** Add user authentication (login screen) to protect your financial data when hosted publicly.
+
 ---
 
 ## 💡 Have an idea?

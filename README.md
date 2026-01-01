@@ -90,6 +90,14 @@ To see how your portfolio is doing today without adding new data:
 streamlit run scripts/dashboard/Home.py
 ```
 
+## 📊 Terminal Analysis Tools
+
+Prefer the command line? Use these scripts for quick insights:
+- **Portfolio Summary:** `python -m scripts.analysis.analyze_portfolio` (Current Value & Unrealized Gains)
+- **Yearly Performance:** `python -m scripts.analysis.analyze_performance` (Realized Gains, Dividends, & Cash Flow)
+- **FX Analysis:** `python -m scripts.analysis.analyze_fx` (Currency P&L)
+- **Dividends/Fees/Interest:** Check `scripts/analysis/` for more specialized tools.
+
 ---
 
 ## 🧩 Adding a New Broker (Plugin System)
