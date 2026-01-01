@@ -1,6 +1,18 @@
 # Kodak Portfolio Tracker 📈
 
-A robust, multi-currency investment portfolio tracking system with a serverless-ready architecture. It supports automated data ingestion from various brokers (Nordnet, Saxo, etc.) and provides deep insights into performance, fees, dividends, and FX gains through a modern Streamlit dashboard.
+A robust, multi-currency investment portfolio tracking system with a serverless-ready architecture.
+
+## 🧐 Why Project Kodak?
+
+Most investors today struggle with fragmented data spread across multiple brokerage accounts (Nordnet, Saxo, Robinhood, etc.). Existing solutions often fall into two traps:
+1.  **SaaS Platforms:** Services like Shareville or other portfolio trackers require you to upload your sensitive financial data to their servers, compromising your privacy.
+2.  **Manual Spreadsheets:** Maintaining a manual spreadsheet with multi-currency historical FX rates and automatic price updates is a nightmare.
+
+**Project Kodak** provides a "Third Way":
+*   **Unified View:** Combine all your accounts into one source of truth.
+*   **Privacy First:** Your data stays in a local SQLite database on *your* machine.
+*   **Automated:** Automated ingestion, historical FX enrichment, and live market pricing.
+*   **Extensible:** Add any broker in minutes using our AI-assisted plugin system.
 
 ---
 
@@ -15,6 +27,8 @@ A robust, multi-currency investment portfolio tracking system with a serverless-
 ---
 
 ## 🛠 Setup
+
+For a detailed, step-by-step walkthrough from scratch, see our **[Getting Started Guide](GETTING_STARTED.md)**.
 
 ### 1. Prerequisites
 Ensure you have **Python 3.9+** installed.
