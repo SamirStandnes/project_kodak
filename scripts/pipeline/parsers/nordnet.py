@@ -1,14 +1,10 @@
 import pandas as pd
-import numpy as np
 import uuid
 import os
-import re
 from typing import List, Dict, Any
 from scripts.shared.utils import clean_num
 
-# --- Nordnet Parser ---
-
-def parse_nordnet(file_path: str) -> List[Dict[str, Any]]:
+def parse(file_path: str) -> List[Dict[str, Any]]:
     try:
         df = pd.read_csv(file_path, sep='\t', encoding='utf-16')
     except Exception as e:
@@ -63,10 +59,8 @@ def parse_nordnet(file_path: str) -> List[Dict[str, Any]]:
         if v1 == 'NOK' and v2 != 'NOK':
             # Auto-FX: Settled in NOK
             amount_local = a1
-            amount = a1 # Use NOK amount as the main amount
-            currency = 'NOK' # Record as NOK transaction
-            # Note: We lose the foreign amount in the 'amount' field, 
-            # but we can preserve it in notes or rely on instrument currency.
+            amount = a1 
+            currency = 'NOK' 
         elif v1 != 'NOK' and v2 == 'NOK':
             amount = a1
             currency = v1
@@ -77,8 +71,6 @@ def parse_nordnet(file_path: str) -> List[Dict[str, Any]]:
             amount_local = a2 if a2 != 0 else a1
 
         # 3. Sign Logic
-        # For FX (CURRENCY_EXCHANGE) and INTEREST/FEE/TAX, we TRUST the signs from the file.
-        # For others, we enforce consistency.
         if std_type not in ['CURRENCY_EXCHANGE', 'INTEREST', 'FEE', 'TAX']:
             outflow_types = ['BUY', 'WITHDRAWAL', 'TRANSFER_OUT']
             inflow_types = ['SELL', 'DEPOSIT', 'TRANSFER_IN', 'DIVIDEND']
@@ -99,31 +91,26 @@ def parse_nordnet(file_path: str) -> List[Dict[str, Any]]:
 
         exchange_rate = clean_num(row['Vekslingskurs'])
         if currency != 'NOK' and (pd.isna(row['Vekslingskurs']) or exchange_rate == 0):
-             exchange_rate = 0.0 # Flag for enrichment
+             exchange_rate = 0.0 
 
         # Fix for zero amount_local if rate exists
         if amount_local == 0 and amount != 0 and exchange_rate != 0:
             amount_local = amount * exchange_rate
             
-        # Fee Logic (Capture Raw + Currency)
+        # Fee Logic
         fee_raw = clean_num(row['Kurtasje_Clean'])
         fee_currency = row.get('Valuta.4', 'NOK')
         if pd.isna(fee_currency): fee_currency = 'NOK'
         
-        # We try to calculate fee_local if possible, otherwise we leave it for enrichment
         fee_local = 0.0
-        
         if fee_currency == 'NOK':
             fee_local = fee_raw
         elif fee_raw != 0:
-            # Try to convert using provided rate or transaction rate
             fee_rate = row.get('Valutakurs_Clean', 0.0)
             if fee_rate != 0:
                 fee_local = fee_raw * fee_rate
             elif exchange_rate != 0:
                 fee_local = fee_raw * exchange_rate
-            else:
-                fee_local = 0.0 # Needs enrichment
 
         item = {
             'external_id': str(uuid.uuid4()),
@@ -144,101 +131,6 @@ def parse_nordnet(file_path: str) -> List[Dict[str, Any]]:
             'fee_currency': fee_currency,
             'fee_local': fee_local
         }
-        results.append(item)
-        
-    return results
-
-# --- Saxo Parser ---
-
-def parse_saxo(file_path: str) -> List[Dict[str, Any]]:
-    try:
-        xl = pd.ExcelFile(file_path)
-        sheet = 'Transactions' if 'Transactions' in xl.sheet_names else 'Transaksjoner'
-        df = pd.read_excel(xl, sheet_name=sheet)
-        xl.close()
-    except Exception as e:
-        print(f'Error reading Saxo file {file_path}: {e}')
-        return []
-        
-    col_map = {
-        'Kunde-ID': 'AccountID', 'Client ID': 'AccountID',
-        'Handelsdato': 'TradeDate', 'Trade Date': 'TradeDate',
-        'Valuteringsdato': 'SettlementDate', 'Value Date': 'SettlementDate',
-        'Instrument ISIN': 'ISIN',
-        'Instrumentsymbol': 'Symbol', 'Instrument Symbol': 'Symbol',
-        'Hendelse': 'Event', 'Event': 'Event',
-        'Bokført beløp': 'Amount', 'Booked Amount': 'Amount',
-        'Omregningskurs': 'FXRate', 'Conversion Rate': 'FXRate',
-        'Type': 'SaxoType'
-    }
-
-    existing_cols = {c: col_map[c] for c in df.columns if c in col_map}
-    df = df.rename(columns=existing_cols)
-    
-    if 'Symbol' not in df.columns and 'Instrument' in df.columns:
-        df = df.rename(columns={'Instrument': 'Symbol'})
-
-    df = df.dropna(subset=['AccountID', 'TradeDate'])
-    
-    trade_pattern = re.compile(r'(?P<action>Kjøp|Salg|Selg|Buy|Sell)\s+(?P<quantity>[-]?[\d,. ]+)\s+@\s+(?P<price>[\d,. ]+)\s+(?P<currency>\w+)', re.IGNORECASE)
-
-    results = []
-    
-    for _, row in df.iterrows():
-        text = str(row['Event'])
-        match = trade_pattern.search(text)
-        
-        amt_booked = clean_num(row['Amount'])
-        
-        item = {
-            'external_id': str(uuid.uuid4()),
-            'account_external_id': str(row['AccountID']),
-            'isin': row['ISIN'] if 'ISIN' in row else None,
-            'symbol': row['Symbol'] if 'Symbol' in row else None,
-            'date': row['TradeDate'],
-            'type': 'OTHER',
-            'quantity': 0.0,
-            'price': 0.0,
-            'amount': amt_booked,
-            'currency': 'NOK',
-            'amount_local': amt_booked,
-            'exchange_rate': clean_num(row['FXRate']) if 'FXRate' in row else 1.0,
-            'description': text,
-            'source_file': os.path.basename(file_path),
-            'fee': 0.0,
-            'fee_currency': 'NOK',
-            'fee_local': 0.0
-        }
-        
-        if match:
-            data = match.groupdict()
-            action = data['action'].lower()
-            qty = float(data['quantity'].replace(',', '').replace(' ', ''))
-            price = float(data['price'].replace(',', '').replace(' ', ''))
-            # We keep the currency for information in description if needed, 
-            # but for Saxo, cash impact is always NOK
-            item['price'] = price
-            
-            if action in ['kjøp', 'buy']:
-                item['type'] = 'BUY'
-                item['quantity'] = abs(qty)
-            else:
-                item['type'] = 'SELL'
-                item['quantity'] = -abs(qty)
-
-        else:
-            saxo_type = str(row['SaxoType']).lower() if 'SaxoType' in row else ''
-            if 'utbytte' in text.lower() or 'dividend' in text.lower(): item['type'] = 'DIVIDEND'
-            elif 'innskudd' in text.lower() or 'deposit' in text.lower(): item['type'] = 'DEPOSIT'
-            elif 'uttak' in text.lower() or 'withdrawal' in text.lower(): item['type'] = 'WITHDRAWAL'
-            elif 'gebyr' in text.lower() or 'fee' in text.lower(): item['type'] = 'FEE'
-            elif 'interest' in text.lower(): item['type'] = 'INTEREST'
-            else: item['type'] = 'ADJUSTMENT'
-
-        # Saxo specific: All cash impacts are settled in NOK
-        item['currency'] = 'NOK'
-        item['amount'] = item['amount_local']
-
         results.append(item)
         
     return results

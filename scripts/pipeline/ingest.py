@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from scripts.shared.utils import setup_logging, generate_txn_hash
 from scripts.shared.db import get_connection, execute_non_query, execute_query
-import scripts.pipeline.parsers as parsers_module
+import importlib
 
 RAW_PATH = os.path.join('data', 'new_raw_transactions')
 ARCHIVE_PATH = os.path.join(RAW_PATH, 'archive')
@@ -33,14 +33,21 @@ def run_ingestion():
 
     # 2. Iterate Sources
     for source_name in subdirs:
-        parser_func_name = f"parse_{source_name}"
-        
-        # Check if parser exists in parsers module
-        if not hasattr(parsers_module, parser_func_name):
-            logging.warning(f"No parser function '{parser_func_name}' found in scripts.pipeline.parsers for folder '{source_name}'. Skipping.")
+        try:
+            # Dynamically import scripts.pipeline.parsers.<source_name>
+            module_name = f"scripts.pipeline.parsers.{source_name}"
+            parser_module = importlib.import_module(module_name)
+            
+            if not hasattr(parser_module, 'parse'):
+                logging.warning(f"Module '{module_name}' does not have a 'parse' function. Skipping.")
+                continue
+                
+            parser_func = parser_module.parse
+            
+        except ImportError:
+            logging.warning(f"No parser module found for folder '{source_name}' (expected '{module_name}'). Skipping.")
             continue
             
-        parser_func = getattr(parsers_module, parser_func_name)
         source_path = os.path.join(RAW_PATH, source_name)
         
         files = glob.glob(os.path.join(source_path, "*"))
