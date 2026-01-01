@@ -2,12 +2,27 @@
 __pycache__/
 *.pyc
 
-# Database (data, not code)
-database/
+# Database
+database/*
+!database/.gitkeep
+!database/backups/
+database/backups/*
+!database/backups/.gitkeep
 
-# Raw Data and Logs
-data/logs/
-data/new_raw_transactions/
+# Logs
+data/logs/*
+!data/logs/.gitkeep
+
+# Raw Transactions
+data/new_raw_transactions/*
+!data/new_raw_transactions/nordnet/
+!data/new_raw_transactions/saxo/
+
+# Keep subfolder structure
+data/new_raw_transactions/nordnet/*
+!data/new_raw_transactions/nordnet/.gitkeep
+data/new_raw_transactions/saxo/*
+!data/new_raw_transactions/saxo/.gitkeep
 
 # Virtual environment
 .venv/
