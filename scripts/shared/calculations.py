@@ -86,8 +86,7 @@ def get_yearly_contribution(target_year: str):
     split_map = get_internal_splits()
 
     # 1. External Flows (Portfolio Level)
-    # 1. External Flows (Portfolio Level)
-    flow_txns = df[df['type'].isin(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT', 'OVERFØRING VIA TRUSTLY'])].copy()
+    flow_txns = df[df['type'].isin(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT'])].copy()
     flow_txns['date_obj'] = pd.to_datetime(flow_txns['date'], format='mixed')
     yearly_detailed_flows = {}
     for _, row in flow_txns.iterrows():
@@ -110,7 +109,7 @@ def get_yearly_contribution(target_year: str):
         cash_eoy += amt
         
         if t_year == target_year:
-            if t_type in ['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT', 'OVERFØRING VIA TRUSTLY', 'ADJUSTMENT']: cash_flows_ext += amt
+            if t_type in ['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT']: cash_flows_ext += amt
             elif t_type == 'FEE': fees_t += amt
             elif t_type == 'INTEREST': int_t += amt
             elif t_type == 'TAX': tax_t += amt
@@ -164,7 +163,25 @@ def get_yearly_contribution(target_year: str):
         
         # 2. Try Database (Nearest Transaction)
         conn = get_connection()
-        # Find price from closest transaction to ref_date
+        
+        # Handle FX Pairs (e.g. HKDNOK=X)
+        if s.endswith("NOK=X"):
+            curr = s.replace("NOK=X", "")
+            query = """
+                SELECT t.exchange_rate FROM transactions t
+                JOIN instruments i ON t.instrument_id = i.id
+                WHERE i.currency = ? AND t.exchange_rate > 0
+                ORDER BY ABS(strftime('%J', t.date) - strftime('%J', ?))
+                LIMIT 1
+            """
+            row = conn.execute(query, (curr, ref_date)).fetchone()
+            conn.close()
+            if row:
+                missing_prices.append({'symbol': s, 'date': ref_date, 'type': 'FX_FALLBACK', 'price': row[0]})
+                return row[0]
+            return 1.0 # Default to 1.0 if no FX history found # Default to 1.0 if no FX history found
+
+        # Handle Standard Instruments
         query = """
             SELECT price FROM transactions t
             JOIN instruments i ON t.instrument_id = i.id
@@ -188,7 +205,9 @@ def get_yearly_contribution(target_year: str):
             if abs(h['qty']) < 0.001: continue
             p = get_price_with_fallback(s, p_dict, ref_date)
             curr = sym_currency.get(s, 'NOK'); r = 1.0
-            if curr != 'NOK': r = p_dict.get(fx_map.get(curr), 1.0)
+            if curr != 'NOK': 
+                pair = fx_map.get(curr)
+                r = get_price_with_fallback(pair, p_dict, ref_date)
             
             adj_q = get_adjusted_qty(s, h['qty'], ref_date, split_map)
             total_v += (adj_q * p * r) if p > 0 else h['cost']
@@ -212,7 +231,9 @@ def get_yearly_contribution(target_year: str):
             h = h_d.get(s, {'qty': 0.0, 'cost': 0.0})
             p = get_price_with_fallback(s, p_d, ref_d)
             curr = sym_currency.get(s, 'NOK'); r = 1.0
-            if curr != 'NOK': r = p_d.get(fx_map.get(curr), 1.0)
+            if curr != 'NOK': 
+                pair = fx_map.get(curr)
+                r = get_price_with_fallback(pair, p_d, ref_d)
             aq = get_adjusted_qty(s, h['qty'], ref_d, split_map)
             return (aq * p * r) if p > 0 else h['cost']
         vs = get_v(soy_holdings, p_soy, soy_date); ve = get_v(eoy_holdings, p_eoy, eoy_date); nf = pos_flows.get(s, 0.0); dv = dividends.get(s, 0.0)
@@ -261,6 +282,24 @@ def get_yearly_equity_curve():
         
         # 2. Try Database (Nearest Transaction)
         conn = get_connection()
+        
+        # Handle FX Pairs (e.g. HKDNOK=X)
+        if s.endswith("NOK=X"):
+            curr = s.replace("NOK=X", "")
+            query = """
+                SELECT t.exchange_rate FROM transactions t
+                JOIN instruments i ON t.instrument_id = i.id
+                WHERE i.currency = ? AND t.exchange_rate > 0
+                ORDER BY ABS(strftime('%J', t.date) - strftime('%J', ?))
+                LIMIT 1
+            """
+            row = conn.execute(query, (curr, ref_date)).fetchone()
+            conn.close()
+            if row:
+                missing_prices.append({'symbol': s, 'date': ref_date, 'type': 'FX_FALLBACK', 'price': row[0]})
+                return row[0]
+            return 1.0 # Default to 1.0 if no FX history found
+
         query = """
             SELECT price FROM transactions t
             JOIN instruments i ON t.instrument_id = i.id
