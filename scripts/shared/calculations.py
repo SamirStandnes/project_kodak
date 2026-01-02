@@ -151,119 +151,70 @@ def get_yearly_contribution(target_year: str):
         if c != 'NOK':
             pair = f"{c}NOK=X"; fetch_list.append(pair); fx_map[c] = pair
     
-        prices_soy = get_historical_prices_by_date(fetch_list, soy_date)
-    
-        prices_eoy = get_historical_prices_by_date(fetch_list, eoy_date)
-    
-    
-    
-        def get_price_with_fallback(s, p_dict, ref_date):
-    
-            # 1. Try Yahoo
-    
-            p = p_dict.get(s, 0.0)
-    
-            if p > 0: return p
-    
-            
-    
-            # 2. Try Database (Nearest Transaction)
-    
-            conn = get_connection()
-    
-            # Find price from closest transaction to ref_date
-    
-            query = """
-    
-                SELECT price FROM transactions t
-    
-                JOIN instruments i ON t.instrument_id = i.id
-    
-                WHERE i.symbol = ? AND t.price > 0
-    
-                ORDER BY ABS(strftime('%J', t.date) - strftime('%J', ?))
-    
-                LIMIT 1
-    
-            """
-    
-            row = conn.execute(query, (s, ref_date)).fetchone()
-    
-            conn.close()
-    
-            if row: return row[0]
-    
-            
-    
-            return 0.0
-    
-    
-    
-        def calc_snapshot_eq(h_dict, p_dict, cash_v, ref_date):
-    
-            total_v = 0.0
-    
-            for s, h in h_dict.items():
-    
-                if abs(h['qty']) < 0.001: continue
-    
-                p = get_price_with_fallback(s, p_dict, ref_date)
-    
-                curr = sym_currency.get(s, 'NOK'); r = 1.0
-    
-                if curr != 'NOK': r = p_dict.get(fx_map.get(curr), 1.0)
-    
-                adj_q = get_adjusted_qty(s, h['qty'], ref_date, split_map)
-    
-                total_v += (adj_q * p * r) if p > 0 else h['cost']
-    
-            return total_v + cash_v
-    
-    
-    
-        eq_soy = calc_snapshot_eq(soy_holdings, p_soy, cash_soy, soy_date)
-    
-        eq_eoy = calc_snapshot_eq(eoy_holdings, p_eoy, cash_eoy, eoy_date)
-    
-        total_portfolio_profit = eq_eoy - eq_soy - cash_flows_ext
-    
+    p_soy = get_historical_prices_by_date(fetch_list, soy_date)
+    p_eoy = get_historical_prices_by_date(fetch_list, eoy_date)
+
+    missing_prices = []
+
+    def get_price_with_fallback(s, p_dict, ref_date):
+        # 1. Try Yahoo
+        p = p_dict.get(s, 0.0)
+        if p > 0: return p
         
+        # 2. Try Database (Nearest Transaction)
+        conn = get_connection()
+        # Find price from closest transaction to ref_date
+        query = """
+            SELECT price FROM transactions t
+            JOIN instruments i ON t.instrument_id = i.id
+            WHERE i.symbol = ? AND t.price > 0 AND t.type IN ('BUY', 'SELL')
+            ORDER BY ABS(strftime('%J', t.date) - strftime('%J', ?))
+            LIMIT 1
+        """
+        row = conn.execute(query, (s, ref_date)).fetchone()
+        conn.close()
+        
+        if row: 
+            missing_prices.append({'symbol': s, 'date': ref_date, 'type': 'DB_FALLBACK', 'price': row[0]})
+            return row[0]
+        
+        missing_prices.append({'symbol': s, 'date': ref_date, 'type': 'MISSING', 'price': 0.0})
+        return 0.0
+
+    def calc_snapshot_eq(h_dict, p_dict, cash_v, ref_date):
+        total_v = 0.0
+        for s, h in h_dict.items():
+            if abs(h['qty']) < 0.001: continue
+            p = get_price_with_fallback(s, p_dict, ref_date)
+            curr = sym_currency.get(s, 'NOK'); r = 1.0
+            if curr != 'NOK': r = p_dict.get(fx_map.get(curr), 1.0)
+            
+            adj_q = get_adjusted_qty(s, h['qty'], ref_date, split_map)
+            total_v += (adj_q * p * r) if p > 0 else h['cost']
+        return total_v + cash_v
+
+    eq_soy = calc_snapshot_eq(soy_holdings, p_soy, cash_soy, soy_date)
+    eq_eoy = calc_snapshot_eq(eoy_holdings, p_eoy, cash_eoy, eoy_date)
+    total_portfolio_profit = eq_eoy - eq_soy - cash_flows_ext
     
-        # Portfolio XIRR
-    
-        x_flows = []
-    
-        if eq_soy > 0: x_flows.append((pd.Timestamp(soy_date), -eq_soy))
-    
-        x_flows.extend(yearly_detailed_flows.get(target_year, []))
-    
-        if eq_eoy > 0: x_flows.append((pd.Timestamp(eoy_date), eq_eoy))
-    
-        total_portfolio_xirr = xirr(x_flows) * 100
-    
-    
-    
-        # Build Result
-    
-        report = []; sum_pos_profit = 0.0
-    
-        for s in all_pos_syms:
-    
-            def get_v(h_d, p_d, ref_d):
-    
-                h = h_d.get(s, {'qty': 0.0, 'cost': 0.0})
-    
-                p = get_price_with_fallback(s, p_d, ref_d)
-    
-                curr = sym_currency.get(s, 'NOK'); r = 1.0
-    
-                if curr != 'NOK': r = p_d.get(fx_map.get(curr), 1.0)
-    
-                aq = get_adjusted_qty(s, h['qty'], ref_d, split_map)
-    
-                return (aq * p * r) if p > 0 else h['cost']
-    
-            vs = get_v(soy_holdings, p_soy, soy_date); ve = get_v(eoy_holdings, p_eoy, eoy_date); nf = pos_flows.get(s, 0.0); dv = dividends.get(s, 0.0)
+    # Portfolio XIRR
+    x_flows = []
+    if eq_soy > 0: x_flows.append((pd.Timestamp(soy_date), -eq_soy))
+    x_flows.extend(yearly_detailed_flows.get(target_year, []))
+    if eq_eoy > 0: x_flows.append((pd.Timestamp(eoy_date), eq_eoy))
+    total_portfolio_xirr = xirr(x_flows) * 100
+
+    # Build Result
+    report = []; sum_pos_profit = 0.0
+    for s in all_pos_syms:
+        def get_v(h_d, p_d, ref_d):
+            h = h_d.get(s, {'qty': 0.0, 'cost': 0.0})
+            p = get_price_with_fallback(s, p_d, ref_d)
+            curr = sym_currency.get(s, 'NOK'); r = 1.0
+            if curr != 'NOK': r = p_d.get(fx_map.get(curr), 1.0)
+            aq = get_adjusted_qty(s, h['qty'], ref_d, split_map)
+            return (aq * p * r) if p > 0 else h['cost']
+        vs = get_v(soy_holdings, p_soy, soy_date); ve = get_v(eoy_holdings, p_eoy, eoy_date); nf = pos_flows.get(s, 0.0); dv = dividends.get(s, 0.0)
         profit = ve - vs + nf + dv; sum_pos_profit += profit
         i_x_flows = []
         if vs > 0: i_x_flows.append((pd.Timestamp(soy_date), -vs))
@@ -281,7 +232,7 @@ def get_yearly_contribution(target_year: str):
     report.append({'Symbol': '[Cash FX & Float]*', 'SOY Value': cash_soy, 'EOY Value': cash_eoy, 'Net Additions': cash_flows_ext, 'Dividends': 0, 'Profit': c_fx, 'IRR %': 0.0})
     df_res = pd.DataFrame(report)
     df_res['Contribution %'] = (df_res['Profit'] / total_portfolio_profit) * total_portfolio_xirr if abs(total_portfolio_profit) > 1 else 0.0
-    return df_res.sort_values('Profit', ascending=False), total_portfolio_xirr
+    return df_res.sort_values('Profit', ascending=False), total_portfolio_xirr, missing_prices
 
 def get_yearly_equity_curve():
     conn = get_connection()
@@ -299,6 +250,32 @@ def get_yearly_equity_curve():
         if y not in y_flows: y_flows[y] = []
         y_flows[y].append((d, -amt))
     previous_equity = 0.0
+    missing_prices = []
+
+    def get_price_with_fallback(s, p_dict, ref_date):
+        # 1. Try Yahoo
+        p = p_dict.get(s, 0.0)
+        if p > 0: return p
+        
+        # 2. Try Database (Nearest Transaction)
+        conn = get_connection()
+        query = """
+            SELECT price FROM transactions t
+            JOIN instruments i ON t.instrument_id = i.id
+            WHERE i.symbol = ? AND t.price > 0 AND t.type IN ('BUY', 'SELL')
+            ORDER BY ABS(strftime('%J', t.date) - strftime('%J', ?))
+            LIMIT 1
+        """
+        row = conn.execute(query, (s, ref_date)).fetchone()
+        conn.close()
+        
+        if row: 
+            missing_prices.append({'symbol': s, 'date': ref_date, 'type': 'DB_FALLBACK', 'price': row[0]})
+            return row[0]
+        
+        missing_prices.append({'symbol': s, 'date': ref_date, 'type': 'MISSING', 'price': 0.0})
+        return 0.0
+
     for year in years:
         for _, row in df[df['year'] == year].iterrows():
             t_type = row['type']; qty = row['quantity']; amt = row['amount_local']; cash_balance += amt; sym = row['symbol']
@@ -319,7 +296,7 @@ def get_yearly_equity_curve():
         price_data = get_historical_prices_by_date(fetch_list, date_str)
         equity_holdings = 0.0
         for s, h in holdings.items():
-            price = price_data.get(s, 0.0); rate = 1.0
+            price = get_price_with_fallback(s, price_data, date_str); rate = 1.0
             if h['curr'] != 'NOK': rate = price_data.get(f"{h['curr']}NOK=X", 1.0)
             aq = get_adjusted_qty(s, h['qty'], date_str, split_map)
             equity_holdings += (aq * price * rate) if price > 0 else h['cost']
@@ -330,7 +307,7 @@ def get_yearly_equity_curve():
         if total_equity > 0: x_flows.append((pd.Timestamp(date_str), total_equity))
         results.append({'year': year, 'start_equity': previous_equity, 'net_flow': sum([-a for _, a in y_flows.get(year, [])]), 'end_equity': total_equity, 'profit': total_equity - previous_equity - sum([-a for _, a in y_flows.get(year, [])]), 'return_pct': xirr(x_flows) * 100})
         previous_equity = total_equity
-    return pd.DataFrame(results)
+    return pd.DataFrame(results), missing_prices
 
 def get_holdings(date=None):
     conn = get_connection(); date_filter = ""; params = []
@@ -379,3 +356,348 @@ def get_total_xirr():
     curr_eq = total_mv + df['amount_local'].sum()
     if curr_eq > 0: x_flows.append((pd.Timestamp.now(), curr_eq))
     return xirr(x_flows) * 100
+
+def get_dividend_details():
+    """
+    Returns detailed dividend data:
+    1. Yearly totals
+    2. Top payers (Current Year - 2025)
+    3. Top payers (All Time)
+    """
+    conn = get_connection()
+
+    # 1. Yearly
+    df_yearly = pd.read_sql_query("""
+        SELECT
+            strftime('%Y', date) as year,
+            SUM(amount_local) as total
+        FROM transactions
+        WHERE type = 'DIVIDEND'
+        GROUP BY year
+        ORDER BY year
+    """, conn)
+
+    # 2. By Ticker (2025)
+    df_current_year = pd.read_sql_query("""
+        SELECT
+            COALESCE(i.symbol, i.isin) as symbol,
+            SUM(t.amount_local) as total
+        FROM transactions t
+        LEFT JOIN instruments i ON t.instrument_id = i.id
+        WHERE t.type = 'DIVIDEND' AND t.date LIKE '2025%'
+        GROUP BY symbol
+        ORDER BY total DESC
+    """, conn)
+
+    # 3. By Ticker (All Time)
+    df_all_time = pd.read_sql_query("""
+        SELECT
+            COALESCE(i.symbol, i.isin) as symbol,
+            SUM(t.amount_local) as total
+        FROM transactions t
+        LEFT JOIN instruments i ON t.instrument_id = i.id
+        WHERE t.type = 'DIVIDEND'
+        GROUP BY symbol
+        ORDER BY total DESC
+    """, conn)
+
+    conn.close()
+    return df_yearly, df_current_year, df_all_time
+
+def get_interest_details():
+    """
+    Returns detailed interest data:
+    1. Yearly totals
+    2. By Currency
+    3. Top Payments
+    """
+    conn = get_connection()
+
+    # 1. Yearly
+    df_yearly = pd.read_sql_query("""
+        SELECT
+            strftime('%Y', date) as year,
+            SUM(ABS(amount_local)) as total
+        FROM transactions
+        WHERE type = 'INTEREST'
+        GROUP BY year
+        ORDER BY year
+    """, conn)
+
+    # 2. By Currency
+    df_currency = pd.read_sql_query("""
+        SELECT
+            currency,
+            SUM(ABS(amount_local)) as total
+        FROM transactions
+        WHERE type = 'INTEREST'
+        GROUP BY currency
+        ORDER BY total DESC
+    """, conn)
+
+    # 3. Recent Payments
+    df_top = pd.read_sql_query("""
+        SELECT
+            date,
+            currency,
+            ABS(amount) as amount,
+            ABS(amount_local) as amount_local,
+            source_file
+        FROM transactions
+        WHERE type = 'INTEREST'
+        ORDER BY date DESC
+        LIMIT 50
+    """, conn)
+
+    conn.close()
+    return df_yearly, df_currency, df_top
+
+def get_fee_details():
+    """
+    Returns detailed fee data:
+    1. Yearly totals
+    2. By Currency
+    3. Top Payments
+    """
+    conn = get_connection()
+
+    # 1. Yearly
+    df_yearly = pd.read_sql_query("""
+        SELECT
+            strftime('%Y', date) as year,
+            SUM(
+                CASE
+                    WHEN type = 'FEE' THEN ABS(amount_local)
+                    ELSE fee_local
+                END
+            ) as total
+        FROM transactions
+        WHERE type = 'FEE' OR fee_local > 0
+        GROUP BY year
+        ORDER BY year
+    """, conn)
+
+    # 2. By Currency
+    df_currency = pd.read_sql_query("""
+        SELECT
+            currency,
+            SUM(
+                CASE
+                    WHEN type = 'FEE' THEN ABS(amount_local)
+                    ELSE fee_local
+                END
+            ) as total
+        FROM transactions
+        WHERE type = 'FEE' OR fee_local > 0
+        GROUP BY currency
+        ORDER BY total DESC
+    """, conn)
+
+    # 3. Recent Fees
+    df_top = pd.read_sql_query("""
+        SELECT
+            date,
+            currency,
+            CASE
+                WHEN type = 'FEE' THEN ABS(amount_local)
+                ELSE fee_local
+            END as amount_local,
+            source_file
+        FROM transactions
+        WHERE type = 'FEE' OR fee_local > 0
+        ORDER BY date DESC
+        LIMIT 50
+    """, conn)
+
+    conn.close()
+    return df_yearly, df_currency, df_top
+
+def get_fx_performance():
+    """
+    Calculates Realized P&L, Remaining Holdings, and Cost Basis for FX trades.
+    Returns a DataFrame.
+    """
+    conn = get_connection()
+
+    # Fetch all FX transactions for non-NOK currencies
+    query = """
+        SELECT
+            date,
+            currency,
+            amount as quantity,
+            amount_local
+        FROM transactions
+        WHERE type = 'CURRENCY_EXCHANGE'
+          AND currency != 'NOK'
+        ORDER BY date, id
+    """
+
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    results = []
+
+    # Process each currency
+    for currency, group in df.groupby('currency'):
+        holdings = 0.0
+        total_cost = 0.0
+        realized_pl = 0.0
+
+        # Sort just in case
+        group = group.sort_values('date')
+
+        for _, row in group.iterrows():
+            qty = row['quantity']
+            val_nok = row['amount_local']
+
+            if qty > 0:
+                # BUY (Inflow of Foreign Currency)
+                holdings += qty
+                total_cost += val_nok
+
+            elif qty < 0:
+                # SELL (Outflow of Foreign Currency)
+                if holdings <= 0:
+                    cost_portion = 0
+                else:
+                    portion = abs(qty) / holdings
+                    portion = min(portion, 1.0)
+                    cost_portion = total_cost * portion
+
+                proceeds = abs(val_nok)
+                gain = proceeds - cost_portion
+                realized_pl += gain
+
+                # Update Inventory
+                holdings += qty
+                total_cost -= cost_portion
+
+                if abs(holdings) < 0.01:
+                    holdings = 0
+                    total_cost = 0
+
+        results.append({
+            'currency': currency,
+            'realized_pl_nok': realized_pl,
+            'holdings': holdings,
+            'cost_basis_nok': total_cost
+        })
+
+    return pd.DataFrame(results)
+
+def get_realized_performance():
+    """
+    Replays the ledger to calculate Realized Gains, Dividends, Fees, etc. by Year.
+    Returns a DataFrame: year | realized_gl | dividends | interest | fees | tax | total_pl
+    """
+    conn = get_connection()
+
+    # Get all transactions sorted by date
+    query = '''
+        SELECT
+            t.date, t.type, t.instrument_id, t.quantity, t.amount_local,
+            t.fee_local, i.symbol
+        FROM transactions t
+        LEFT JOIN instruments i ON t.instrument_id = i.id
+        ORDER BY t.date, t.id
+    '''
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    # State
+    holdings = {} # inst_id -> {qty, total_cost}
+    yearly = {}   # year -> {realized_gl, dividends, interest, fees, tax}
+
+    def get_year(date_str):
+        return str(date_str)[:4]
+
+    def add_stat(year, category, value):
+        if year not in yearly:
+            yearly[year] = {'realized_gl': 0.0, 'dividends': 0.0, 'interest': 0.0, 'fees': 0.0, 'tax': 0.0}
+        yearly[year][category] += value
+
+    # Replay
+    for _, row in df.iterrows():
+        year = get_year(row['date'])
+        t_type = row['type']
+        inst_id = row['instrument_id']
+        qty = row['quantity']
+        amt = row['amount_local']
+        fee = row['fee_local'] if pd.notna(row['fee_local']) else 0.0
+
+        # Always track fees
+        if fee > 0:
+            add_stat(year, 'fees', -abs(fee)) # fees are negative impact
+
+        # 1. Income / Costs
+        if t_type == 'DIVIDEND':
+            add_stat(year, 'dividends', amt)
+        elif t_type == 'INTEREST':
+            add_stat(year, 'interest', amt) # usually negative
+        elif t_type == 'TAX':
+            add_stat(year, 'tax', amt)      # usually negative
+        elif t_type == 'FEE':
+            add_stat(year, 'fees', -abs(amt)) # Explicit fee transaction
+
+        # 2. Capital Gains (Buy/Sell)
+        # Only process if instrument is involved
+        if inst_id:
+            if inst_id not in holdings:
+                holdings[inst_id] = {'qty': 0.0, 'cost': 0.0}
+
+            h = holdings[inst_id]
+
+            # Identify Buy vs Sell using logic similar to get_holdings
+            
+            # INFLOW (Buy)
+            if t_type in ['BUY', 'DEPOSIT', 'TRANSFER_IN', 'TILDELING INNLEGG RE', 'BYTTE INNLEGG VP', 'EMISJON INNLEGG VP']:
+                # Add to inventory
+                h['qty'] += qty
+                # Cost increases by amount paid (usually negative amount, so we take abs)
+                cost_added = abs(amt)
+                h['cost'] += cost_added
+
+            # OUTFLOW (Sell)
+            elif t_type in ['SELL', 'WITHDRAWAL', 'TRANSFER_OUT', 'INNLØSN. UTTAK VP', 'BYTTE UTTAK VP']:
+                # Calculate Realized Gain
+                # Avg Cost Basis
+                if h['qty'] > 0:
+                    avg_cost = h['cost'] / h['qty']
+                    cost_of_sold = avg_cost * abs(qty)
+
+                    # Proceeds = Amount received (positive for sell)
+                    proceeds = abs(amt)
+
+                    # Gain = Proceeds - Cost
+                    if t_type in ['SELL', 'INNLØSN. UTTAK VP', 'BYTTE UTTAK VP']:
+                        gain = proceeds - cost_of_sold
+                        add_stat(year, 'realized_gl', gain)
+
+                    # Reduce Inventory
+                    h['cost'] -= cost_of_sold
+
+                h['qty'] += qty # qty is negative
+
+                # Cleanup dust
+                if abs(h['qty']) < 0.001:
+                    h['qty'] = 0.0
+                    h['cost'] = 0.0
+
+    # Convert to DataFrame
+    data = []
+    for year, stats in yearly.items():
+        row = stats.copy()
+        row['year'] = year
+        row['total_pl'] = sum(stats.values())
+        data.append(row)
+
+    if not data:
+        return pd.DataFrame()
+        
+    return pd.DataFrame(data).sort_values('year')

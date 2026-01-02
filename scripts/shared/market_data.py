@@ -23,7 +23,7 @@ def get_latest_prices(instrument_ids: List[int]) -> Dict[int, Tuple[float, str]]
 
     print(f"Fetching prices for {len(symbols)} symbols...")
     try:
-        data = yf.download(symbols, period="5d", progress=False)['Close']
+        data = yf.download(symbols, period="5d", progress=False, auto_adjust=False)['Close']
     except Exception as e:
         print(f"Error fetching data: {e}")
         return {}
@@ -99,9 +99,9 @@ def get_historical_prices_by_date(symbols: List[str], target_date: str) -> Dict[
     print(f"Fetching historical prices for {len(symbols)} symbols around {target_date}...")
     
     try:
-        # We use standard auto_adjust=True to get split-adjusted prices.
-        # We will adjust our quantities to match this scale in calculations.py.
-        df = yf.download(symbols, start=start_dt, end=end_dt, progress=False, group_by='ticker', auto_adjust=True)
+        # We use auto_adjust=False to avoid Dividend adjustments which undervalue the asset.
+        # We rely on DB transactions (BYTTE) or manual splits for quantity adjustments.
+        df = yf.download(symbols, start=start_dt, end=end_dt, progress=False, group_by='ticker', auto_adjust=False)
     except Exception as e:
         print(f"Error fetching historical data: {e}")
         return {}
