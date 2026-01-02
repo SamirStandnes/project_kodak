@@ -44,7 +44,8 @@ def parse(file_path: str) -> List[Dict[str, Any]]:
                 'DEBETRENTE': 'INTEREST', 'INNLØSN. UTTAK VP': 'SELL', 
                 'AVG KORR': 'ADJUSTMENT', 'ERSTATNING': 'DEPOSIT',
                 'SALG VALUTA': 'CURRENCY_EXCHANGE', 'KJØP VALUTA': 'CURRENCY_EXCHANGE', 
-                'AVGIFT': 'FEE', 'PLATTFORMAVGIFT': 'FEE'
+                'AVGIFT': 'FEE', 'PLATTFORMAVGIFT': 'FEE',
+                'OVERFØRING VIA TRUSTLY': 'DEPOSIT'
             }
             if t_type in mapping: std_type = mapping[t_type]
             elif 'RENTE' in t_type: std_type = 'INTEREST'

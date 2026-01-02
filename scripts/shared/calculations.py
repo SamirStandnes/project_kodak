@@ -86,7 +86,8 @@ def get_yearly_contribution(target_year: str):
     split_map = get_internal_splits()
 
     # 1. External Flows (Portfolio Level)
-    flow_txns = df[df['type'].isin(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT'])].copy()
+    # 1. External Flows (Portfolio Level)
+    flow_txns = df[df['type'].isin(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT', 'OVERFØRING VIA TRUSTLY'])].copy()
     flow_txns['date_obj'] = pd.to_datetime(flow_txns['date'], format='mixed')
     yearly_detailed_flows = {}
     for _, row in flow_txns.iterrows():
@@ -109,7 +110,7 @@ def get_yearly_contribution(target_year: str):
         cash_eoy += amt
         
         if t_year == target_year:
-            if t_type in ['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT']: cash_flows_ext += amt
+            if t_type in ['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT', 'OVERFØRING VIA TRUSTLY', 'ADJUSTMENT']: cash_flows_ext += amt
             elif t_type == 'FEE': fees_t += amt
             elif t_type == 'INTEREST': int_t += amt
             elif t_type == 'TAX': tax_t += amt
@@ -242,7 +243,8 @@ def get_yearly_equity_curve():
     df['year'] = df['date'].str[:4]; years = sorted(df['year'].unique())
     split_map = get_internal_splits()
     holdings = {}; cash_balance = 0.0; results = []
-    flow_txns = df[df['type'].isin(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT'])].copy()
+    # 1. External Flows (Portfolio Level)
+    flow_txns = df[df['type'].isin(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT', 'OVERFØRING VIA TRUSTLY'])].copy()
     flow_txns['date_obj'] = pd.to_datetime(flow_txns['date'], format='mixed')
     y_flows = {}
     for _, row in flow_txns.iterrows():
@@ -339,7 +341,8 @@ def get_income_and_costs():
 def get_total_xirr():
     conn = get_connection(); df = pd.read_sql_query("SELECT date, type, amount_local FROM transactions", conn); conn.close()
     if df.empty: return 0.0
-    flow_txns = df[df['type'].isin(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT'])].copy()
+    # 1. External Flows (Portfolio Level)
+    flow_txns = df[df['type'].isin(['DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT', 'OVERFØRING VIA TRUSTLY'])].copy()
     flow_txns['date_obj'] = pd.to_datetime(flow_txns['date'], format='mixed')
     x_flows = [(row['date_obj'], -row['amount_local']) for _, row in flow_txns.iterrows()]
     df_h = get_holdings()
