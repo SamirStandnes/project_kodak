@@ -120,7 +120,16 @@ if selected_year:
             }),
             use_container_width=True
         )
+
+        st.caption("""
+        **Legend & Logic:**
+        - **[Items in Brackets]**: These are non-instrument totals (Fees, Interest, Tax).
+        - **[Cash FX & Float]***: Represents the P&L from your uninvested cash or margin debt. 
+            - *Positive:* Gain from currency strengthening while holding foreign cash (or weakening while holding debt).
+            - *Negative:* Loss from currency movement or unexplained cash drift.
+        """)
         
         if missing_prices_year:
             with st.expander(f"⚠️ Missing / Fallback Prices for {selected_year}"):
+                 st.info("ℹ️ **Why is this list longer?**\n\nDetailed analysis requires pricing for both the **Start of Year** (to calculate opening value) and **End of Year**. The Timeline view only checks the End of Year value.")
                  st.dataframe(pd.DataFrame(missing_prices_year))
