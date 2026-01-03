@@ -69,7 +69,8 @@ def load_holdings_data():
         curr = BASE_CURRENCY
         
         if mkt:
-            price, curr = mkt
+            price = mkt['price']
+            curr = mkt['currency']
             
         # FX Conversion
         if curr == BASE_CURRENCY:
