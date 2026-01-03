@@ -4,6 +4,7 @@ import os
 import re
 from typing import List, Dict, Any
 from scripts.shared.utils import clean_num, load_config
+from scripts.shared.parser_utils import create_empty_transaction
 
 # --- Configuration ---
 config = load_config()
@@ -50,25 +51,21 @@ def parse(file_path: str) -> List[Dict[str, Any]]:
         amt_local = clean_num(row['Amount'])
         fx_rate = clean_num(row['FXRate']) if 'FXRate' in row and pd.notna(row['FXRate']) else 1.0
         
-        item = {
-            'external_id': str(uuid.uuid4()),
+        # Use Helper to init standard dict
+        item = create_empty_transaction()
+        
+        # Populate known fields
+        item.update({
             'account_external_id': str(row['AccountID']),
             'isin': row['ISIN'] if 'ISIN' in row else None,
             'symbol': row['Symbol'] if 'Symbol' in row else None,
             'date': row['TradeDate'],
-            'type': 'OTHER',
-            'quantity': 0.0,
-            'price': 0.0,
-            'amount': amt_local,
-            'currency': BASE_CURRENCY,
+            'amount': amt_local,       # Default to local
             'amount_local': amt_local,
             'exchange_rate': fx_rate,
             'description': text,
             'source_file': os.path.basename(file_path),
-            'fee': 0.0,
-            'fee_currency': BASE_CURRENCY,
-            'fee_local': 0.0
-        }
+        })
         
         if match:
             data = match.groupdict()
