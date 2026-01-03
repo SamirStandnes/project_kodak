@@ -119,8 +119,8 @@ def parse(file_path: str) -> List[Dict[str, Any]]:
         item = {
             'external_id': str(uuid.uuid4()),
             'account_external_id': str(row['Portefølje']),
-            'isin': row['ISIN'],
-            'symbol': row['Verdipapir'],
+            'isin': str(row['ISIN']) if pd.notna(row['ISIN']) else None,
+            'symbol': str(row['Verdipapir']) if pd.notna(row['Verdipapir']) else None,
             'date': row['Handelsdag'],
             'type': std_type,
             'quantity': qty,
