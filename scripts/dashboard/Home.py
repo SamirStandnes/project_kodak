@@ -10,14 +10,19 @@ import pandas as pd
 from scripts.shared.db import get_connection, execute_query
 from scripts.shared.calculations import get_holdings, get_income_and_costs
 from scripts.shared.market_data import get_exchange_rate
+from scripts.shared.utils import load_config
+
+# --- CONFIGURATION ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
 st.set_page_config(
-    page_title="Kodak Portfolio",
+    page_title=f"Kodak Portfolio ({BASE_CURRENCY})",
     page_icon="📈",
     layout="wide"
 )
 
-st.title("Portfolio Overview")
+st.title(f"Portfolio Overview ({BASE_CURRENCY})")
 
 # --- DATA FETCHING ---
 @st.cache_data
@@ -63,11 +68,11 @@ def load_summary_data():
             price = mkt['price']
             
             # FX Conversion
-            if curr == 'NOK':
+            if curr == BASE_CURRENCY:
                 rate = 1.0
             else:
                 if curr not in fx_cache:
-                    fx_cache[curr] = get_exchange_rate(curr, 'NOK')
+                    fx_cache[curr] = get_exchange_rate(curr, BASE_CURRENCY)
                 rate = fx_cache[curr]
             
             val = row['quantity'] * price * rate
@@ -83,16 +88,16 @@ def load_summary_data():
 
     # 2. Cash Balance (Approximate)
     cash_rows = pd.read_sql_query("SELECT currency, SUM(amount) as total FROM transactions GROUP BY currency", conn)
-    total_cash_nok = 0
+    total_cash_base = 0
     for _, row in cash_rows.iterrows():
         curr = row['currency']
         amt = row['total']
-        if curr == 'NOK':
-            total_cash_nok += amt
+        if curr == BASE_CURRENCY:
+            total_cash_base += amt
         else:
             if curr not in fx_cache:
-                fx_cache[curr] = get_exchange_rate(curr, 'NOK')
-            total_cash_nok += amt * fx_cache[curr]
+                fx_cache[curr] = get_exchange_rate(curr, BASE_CURRENCY)
+            total_cash_base += amt * fx_cache[curr]
 
     # 3. Income Totals
     income = get_income_and_costs()
@@ -101,7 +106,7 @@ def load_summary_data():
     return {
         "market_value": total_market_value,
         "cost_basis": total_cost,
-        "cash": total_cash_nok,
+        "cash": total_cash_base,
         "dividends": income['dividends'],
         "interest": income['interest'],
         "fees": income['fees'],
@@ -120,25 +125,25 @@ net_worth = data['market_value'] + data['cash']
 total_gain = data['market_value'] - data['cost_basis']
 total_return_pct = (data['market_value'] / data['cost_basis'] - 1) * 100 if data['cost_basis'] > 0 else 0
 
-col1.metric("Total Net Equity", f"{net_worth:,.0f} NOK")
-col2.metric("Stock Holdings", f"{data['market_value']:,.0f} NOK")
-col3.metric("Cash & Margin", f"{data['cash']:,.0f} NOK", help="Negative value indicates margin usage.")
+col1.metric("Total Net Equity", f"{net_worth:,.0f} {BASE_CURRENCY}")
+col2.metric("Stock Holdings", f"{data['market_value']:,.0f} {BASE_CURRENCY}")
+col3.metric("Cash & Margin", f"{data['cash']:,.0f} {BASE_CURRENCY}", help="Negative value indicates margin usage.")
 
 # 2. Performance & Growth
 st.subheader("Performance & Growth")
 col4, col5, col6 = st.columns(3)
 
-col4.metric("Unrealized Gain/Loss", f"{total_gain:,.0f} NOK", f"{total_return_pct:.2f}%", delta_color="normal")
+col4.metric("Unrealized Gain/Loss", f"{total_gain:,.0f} {BASE_CURRENCY}", f"{total_return_pct:.2f}%", delta_color="normal")
 # We could add an "Invested Capital" metric here if desired
-col5.metric("Invested Capital (Cost Basis)", f"{data['cost_basis']:,.0f} NOK")
+col5.metric("Invested Capital (Cost Basis)", f"{data['cost_basis']:,.0f} {BASE_CURRENCY}")
 
 # 3. Income & Costs (Cash Flow)
 st.subheader("Cash Flow (All Time)")
 col6, col7, col8 = st.columns(3)
 
-col6.metric("Total Dividends", f"{data['dividends']:,.0f} NOK", delta_color="normal")
-col7.metric("Total Interest Paid", f"{data['interest']:,.0f} NOK", delta_color="inverse")
-col8.metric("Total Fees Paid", f"{data['fees']:,.0f} NOK", delta_color="inverse")
+col6.metric("Total Dividends", f"{data['dividends']:,.0f} {BASE_CURRENCY}", delta_color="normal")
+col7.metric("Total Interest Paid", f"{data['interest']:,.0f} {BASE_CURRENCY}", delta_color="inverse")
+col8.metric("Total Fees Paid", f"{data['fees']:,.0f} {BASE_CURRENCY}", delta_color="inverse")
 
 st.divider()
 

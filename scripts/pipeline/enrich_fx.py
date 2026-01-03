@@ -3,13 +3,18 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
 from scripts.shared.db import get_connection
+from scripts.shared.utils import load_config
+
+# --- Configuration ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
 def enrich_staging_data():
     conn = get_connection()
     
     # 1. Enrich Main Transaction FX
     # Enrich if rate is missing OR if local amount is missing OR if local amount equals amount (unconverted)
-    df_tx = pd.read_sql("SELECT * FROM transactions WHERE (exchange_rate = 0.0 OR amount_local = 0.0 OR abs(amount_local - amount) < 0.01) AND amount != 0.0 AND currency != 'NOK'", conn)
+    df_tx = pd.read_sql(f"SELECT * FROM transactions WHERE (exchange_rate = 0.0 OR amount_local = 0.0 OR abs(amount_local - amount) < 0.01) AND amount != 0.0 AND currency != '{BASE_CURRENCY}'", conn)
     
     updates_tx = []
     # Cache to avoid duplicate requests for same date/pair
@@ -41,7 +46,7 @@ def enrich_staging_data():
             
     # 2. Enrich Fee FX
     # Enrich where fee is non-zero but fee_local is 0 (meaning we couldn't convert it during parse)
-    df_fee = pd.read_sql("SELECT * FROM transactions WHERE fee != 0 AND fee_local = 0 AND fee_currency != 'NOK'", conn)
+    df_fee = pd.read_sql(f"SELECT * FROM transactions WHERE fee != 0 AND fee_local = 0 AND fee_currency != '{BASE_CURRENCY}'", conn)
     
     updates_fee = []
     if not df_fee.empty:
@@ -74,7 +79,7 @@ def _get_rate(currency, date_str, cache):
     if cache_key in cache:
         return cache[cache_key]
     
-    pair = f"{currency}NOK=X"
+    pair = f"{currency}{BASE_CURRENCY}=X"
     print(f"Fetching {pair} for {date_str}...")
     try:
         d = datetime.strptime(date_str, '%Y-%m-%d')

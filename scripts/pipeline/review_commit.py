@@ -1,8 +1,11 @@
 import pandas as pd
 from scripts.shared.db import get_connection, execute_non_query, execute_scalar, execute_query, create_backup
+from scripts.shared.utils import load_config
 
 def review_and_commit():
     conn = get_connection()
+    config = load_config()
+    base_curr = config.get('base_currency', 'NOK')
     
     # Check Staging
     try:
@@ -56,13 +59,13 @@ def review_and_commit():
         print("Staging cleared.")
     elif choice == 'y':
         create_backup("before_commit")
-        _commit_data(df, unknown_accs, unknown_insts)
+        _commit_data(df, unknown_accs, unknown_insts, base_curr)
     else:
         print("Operation cancelled.")
     
     conn.close()
 
-def _commit_data(df, new_accs, new_isins):
+def _commit_data(df, new_accs, new_isins, base_curr):
     print("Committing...")
     conn = get_connection()
     cursor = conn.cursor()
@@ -72,8 +75,8 @@ def _commit_data(df, new_accs, new_isins):
         for acc_ext in new_accs:
             # Try to infer broker from ID or source file (simplified here)
             name = f"New Account {acc_ext}"
-            cursor.execute("INSERT INTO accounts (name, external_id, currency) VALUES (?, ?, 'NOK')", (name, acc_ext))
-            print(f"Created account: {name}")
+            cursor.execute("INSERT INTO accounts (name, external_id, currency) VALUES (?, ?, ?)", (name, acc_ext, base_curr))
+            print(f"Created account: {name} ({base_curr})")
 
         # 2. Create New Instruments
         # We need symbol from the dataframe for these ISINs

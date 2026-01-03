@@ -2,17 +2,19 @@
 
 A robust, multi-currency investment portfolio tracking system with a serverless-ready architecture.
 
-## 🧐 Why Project Kodak?
+## ⚙️ Configuration
 
-Most investors today struggle with fragmented data spread across multiple brokerage accounts (Nordnet, Saxo, Robinhood, etc.). Existing solutions often fall into two traps:
-1.  **SaaS Platforms:** Services like Shareville or other portfolio trackers require you to upload your sensitive financial data to their servers, compromising your privacy.
-2.  **Manual Spreadsheets:** Maintaining a manual spreadsheet with multi-currency historical FX rates and automatic price updates is a nightmare.
+Project Kodak is designed to be currency-agnostic. You can configure your global settings in `config.yaml`:
 
-**Project Kodak** provides a "Third Way":
-*   **Unified View:** Combine all your accounts into one source of truth.
-*   **Privacy First:** Your data stays in a local SQLite database on *your* machine.
-*   **Automated:** Automated ingestion, historical FX enrichment, and live market pricing.
-*   **Extensible:** Add any broker in minutes using our AI-assisted plugin system.
+```yaml
+# The base currency for all reporting (e.g., NOK, USD, EUR)
+base_currency: NOK
+```
+
+This setting affects:
+- The default currency for new accounts.
+- The target currency for all performance reports and charts.
+- Automatic FX rate enrichment.
 
 ---
 

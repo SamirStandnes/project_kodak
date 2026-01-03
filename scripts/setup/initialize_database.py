@@ -1,13 +1,18 @@
 import sqlite3
 import os
+import pandas as pd
+from scripts.shared.utils import load_config
 
 # Adjust path relative to this script
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'database', 'portfolio.db')
 
 def initialize_database():
     """
-    Initializes the SQLite database with the Silver Standard schema.
+    Initializes the SQLite database and reference files.
     """
+    config = load_config()
+    base_curr = config.get('base_currency', 'NOK')
+    
     # Ensure directory exists
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     
@@ -17,12 +22,12 @@ def initialize_database():
     # --- 1. Master Data ---
 
     # Accounts: The containers for assets
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS accounts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             broker TEXT,
-            currency TEXT NOT NULL DEFAULT 'NOK', -- Reporting currency
+            currency TEXT NOT NULL DEFAULT '{base_curr}', -- Reporting currency
             type TEXT,
             external_id TEXT UNIQUE -- The ID from the import file (e.g. 19269921)
         )
@@ -105,6 +110,24 @@ def initialize_database():
     conn.commit()
     conn.close()
     print(f"Database schema ensured at {DB_PATH}")
+
+    # --- 4. Reference Templates ---
+    ref_dir = os.path.join('data', 'reference')
+    os.makedirs(ref_dir, exist_ok=True)
+
+    # ISIN Map Template
+    isin_path = os.path.join(ref_dir, 'isin_map.csv')
+    if not os.path.exists(isin_path):
+        df_isin = pd.DataFrame(columns=['isin', 'symbol', 'currency', 'sector', 'region', 'country', 'asset_class'])
+        df_isin.to_csv(isin_path, index=False)
+        print(f"Created template: {isin_path}")
+
+    # Accounts Map Template
+    acc_path = os.path.join(ref_dir, 'accounts_map.csv')
+    if not os.path.exists(acc_path):
+        df_acc = pd.DataFrame(columns=['external_id', 'name', 'broker', 'currency'])
+        df_acc.to_csv(acc_path, index=False)
+        print(f"Created template: {acc_path}")
 
 if __name__ == '__main__':
     initialize_database()

@@ -2,7 +2,31 @@ import hashlib
 import logging
 import os
 import pandas as pd
-from typing import Optional, Union
+import yaml
+from typing import Optional, Union, Dict, Any
+
+def load_config() -> Dict[str, Any]:
+    """Loads configuration from config.yaml in project root."""
+    # Find project root (3 levels up from this file)
+    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    config_path = os.path.join(root_dir, 'config.yaml')
+    
+    defaults = {
+        'base_currency': 'NOK',
+        'data_dir': 'data',
+        'reference_dir': 'data/reference'
+    }
+    
+    if not os.path.exists(config_path):
+        return defaults
+        
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+            return {**defaults, **(config or {})}
+    except Exception as e:
+        logging.error(f"Failed to load config: {e}")
+        return defaults
 
 def setup_logging(script_name: str) -> str:
     """Configures logging to file and console."""

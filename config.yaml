@@ -1,0 +1,10 @@
+# Kodak Portfolio Configuration
+
+# The base currency for all reporting and aggregation (e.g., NOK, USD, EUR)
+base_currency: NOK
+
+# Data Paths
+data_dir: data
+reference_dir: data/reference
+isin_map_file: isin_map.csv
+accounts_map_file: accounts_map.csv

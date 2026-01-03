@@ -2,7 +2,12 @@ import pandas as pd
 import numpy as np
 from scripts.shared.db import get_connection, execute_query
 from scripts.shared.market_data import get_historical_prices_by_date
+from scripts.shared.utils import load_config
 from datetime import datetime
+
+# --- Configuration ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
 # --- Constants for Transaction Classification ---
 INFLOW_TYPES = ['BUY', 'DEPOSIT', 'TILDELING INNLEGG RE', 'BYTTE INNLEGG VP', 'TRANSFER_IN', 'EMISJON INNLEGG VP']
@@ -147,9 +152,9 @@ def get_yearly_contribution(target_year: str):
     fetch_list = list(all_pos_syms)
     fx_map = {}
     for sym in all_pos_syms:
-        c = sym_currency.get(sym, 'NOK')
-        if c != 'NOK':
-            pair = f"{c}NOK=X"; fetch_list.append(pair); fx_map[c] = pair
+        c = sym_currency.get(sym, BASE_CURRENCY)
+        if c != BASE_CURRENCY:
+            pair = f"{c}{BASE_CURRENCY}=X"; fetch_list.append(pair); fx_map[c] = pair
     
     p_soy = get_historical_prices_by_date(fetch_list, soy_date)
     p_eoy = get_historical_prices_by_date(fetch_list, eoy_date)
@@ -165,8 +170,8 @@ def get_yearly_contribution(target_year: str):
         conn = get_connection()
         
         # Handle FX Pairs (e.g. HKDNOK=X)
-        if s.endswith("NOK=X"):
-            curr = s.replace("NOK=X", "")
+        if s.endswith(f"{BASE_CURRENCY}=X"):
+            curr = s.replace(f"{BASE_CURRENCY}=X", "")
             query = """
                 SELECT t.exchange_rate FROM transactions t
                 JOIN instruments i ON t.instrument_id = i.id
@@ -204,8 +209,8 @@ def get_yearly_contribution(target_year: str):
         for s, h in h_dict.items():
             if abs(h['qty']) < 0.001: continue
             p = get_price_with_fallback(s, p_dict, ref_date)
-            curr = sym_currency.get(s, 'NOK'); r = 1.0
-            if curr != 'NOK': 
+            curr = sym_currency.get(s, BASE_CURRENCY); r = 1.0
+            if curr != BASE_CURRENCY: 
                 pair = fx_map.get(curr)
                 r = get_price_with_fallback(pair, p_dict, ref_date)
             
@@ -230,8 +235,8 @@ def get_yearly_contribution(target_year: str):
         def get_v(h_d, p_d, ref_d):
             h = h_d.get(s, {'qty': 0.0, 'cost': 0.0})
             p = get_price_with_fallback(s, p_d, ref_d)
-            curr = sym_currency.get(s, 'NOK'); r = 1.0
-            if curr != 'NOK': 
+            curr = sym_currency.get(s, BASE_CURRENCY); r = 1.0
+            if curr != BASE_CURRENCY: 
                 pair = fx_map.get(curr)
                 r = get_price_with_fallback(pair, p_d, ref_d)
             aq = get_adjusted_qty(s, h['qty'], ref_d, split_map)
@@ -284,8 +289,8 @@ def get_yearly_equity_curve():
         conn = get_connection()
         
         # Handle FX Pairs (e.g. HKDNOK=X)
-        if s.endswith("NOK=X"):
-            curr = s.replace("NOK=X", "")
+        if s.endswith(f"{BASE_CURRENCY}=X"):
+            curr = s.replace(f"{BASE_CURRENCY}=X", "")
             query = """
                 SELECT t.exchange_rate FROM transactions t
                 JOIN instruments i ON t.instrument_id = i.id
@@ -331,14 +336,14 @@ def get_yearly_equity_curve():
         for k in to_remove: del holdings[k]
         date_str = f"{year}-12-31"; fetch_list = list(holdings.keys())
         for s in list(holdings.keys()):
-            if holdings[s]['curr'] != 'NOK':
-                pair = f"{holdings[s]['curr']}NOK=X"
+            if holdings[s]['curr'] != BASE_CURRENCY:
+                pair = f"{holdings[s]['curr']}{BASE_CURRENCY}=X"
                 if pair not in fetch_list: fetch_list.append(pair)
         price_data = get_historical_prices_by_date(fetch_list, date_str)
         equity_holdings = 0.0
         for s, h in holdings.items():
             price = get_price_with_fallback(s, price_data, date_str); rate = 1.0
-            if h['curr'] != 'NOK': rate = price_data.get(f"{h['curr']}NOK=X", 1.0)
+            if h['curr'] != BASE_CURRENCY: rate = price_data.get(f"{h['curr']}{BASE_CURRENCY}=X", 1.0)
             aq = get_adjusted_qty(s, h['qty'], date_str, split_map)
             equity_holdings += (aq * price * rate) if price > 0 else h['cost']
         total_equity = equity_holdings + cash_balance
@@ -392,7 +397,7 @@ def get_total_xirr():
         for _, r in df_h.iterrows():
             m = prices.get(r['instrument_id'])
             if m:
-                p, c = m; fx = get_exchange_rate(c, 'NOK') if c != 'NOK' else 1.0
+                p, c = m; fx = get_exchange_rate(c, BASE_CURRENCY) if c != BASE_CURRENCY else 1.0
                 total_mv += r['quantity'] * p * fx
             else: total_mv += r['cost_basis_local']
     curr_eq = total_mv + df['amount_local'].sum()
