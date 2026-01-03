@@ -12,7 +12,11 @@ config = load_config()
 BASE_CURRENCY = config.get('base_currency', 'NOK')
 
 def run_report():
-    # ... (argparse code) ...
+    parser = argparse.ArgumentParser(description="Kodak Portfolio Performance Report")
+    parser.add_argument("year", nargs="?", help="Year to analyze in detail (e.g., 2021)")
+    parser.add_argument("--total", action="store_true", help="Show only All-Time XIRR")
+    parser.add_argument("--timeline", action="store_true", help="Show only Yearly Timeline")
+    
     args = parser.parse_args()
     console = Console()
     

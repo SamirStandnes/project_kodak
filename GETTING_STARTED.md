@@ -76,13 +76,13 @@ When asking an AI to write a parser, provide this schema:
     'price': float,
     'amount': float (original currency),
     'currency': 'USD, EUR, etc.',
-    'amount_local': float (value in NOK),
-    'exchange_rate': float (1.0 for NOK),
+    'amount_local': float (value in BASE_CURRENCY),
+    'exchange_rate': float (Rate to convert amount -> amount_local),
     'description': 'Transaction notes',
     'source_file': os.path.basename(file_path),
     'fee': float,
     'fee_currency': 'Currency code',
-    'fee_local': float (fee in NOK)
+    'fee_local': float (fee in BASE_CURRENCY)
 }
 ```
 

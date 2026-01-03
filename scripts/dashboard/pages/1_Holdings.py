@@ -9,6 +9,7 @@ if root_path not in sys.path:
 
 import streamlit as st
 import pandas as pd
+from scripts.shared.db import get_connection
 from scripts.shared.calculations import get_holdings
 from scripts.shared.market_data import get_latest_prices, get_exchange_rate
 from scripts.shared.utils import load_config

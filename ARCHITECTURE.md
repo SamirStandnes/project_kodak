@@ -30,15 +30,15 @@ The single source of truth for every event (trade, dividend, deposit, fee).
 | `quantity` | REAL | Number of shares. Positive for inflows, Negative for outflows. |
 | `amount` | REAL | Raw transaction value in the asset's currency (e.g., USD). |
 | `currency` | TEXT | The currency of the asset (e.g., 'USD'). |
-| `amount_local` | REAL | **CRITICAL:** The value converted to the portfolio's base currency (NOK). This is the "Book Value" used for accounting. |
+| `amount_local` | REAL | **CRITICAL:** The value converted to the portfolio's base currency (e.g., NOK, USD). This is the "Book Value" used for accounting. |
 | `exchange_rate` | REAL | The FX rate applied at the time of transaction. |
-| `fee_local` | REAL | Fees incurred, normalized to base currency (NOK). |
+| `fee_local` | REAL | Fees incurred, normalized to base currency. |
 
 ### 2.2 Reference Data
 
 #### `accounts`
 Containers for assets (e.g., "Nordnet ASK", "Saxo Trader").
-*   `currency`: The "Home" currency of the account (usually NOK).
+*   `currency`: The "Home" currency of the account (defaults to Base Currency).
 
 #### `instruments`
 Tradable assets.
@@ -52,7 +52,7 @@ Historical EOD (End of Day) close prices.
 *   `source`: Usually 'yahoo' or 'manual'.
 
 #### `exchange_rates`
-Historical FX rates (e.g., USD -> NOK).
+Historical FX rates (e.g., USD -> Base Currency).
 
 ---
 
@@ -109,6 +109,6 @@ We use the **XIRR (Extended Internal Rate of Return)** algorithm to calculate pe
 *   **Why?** A simple percentage gain `(End / Start) - 1` is invalid if you added fresh cash halfway through the year. XIRR solves this.
 
 ### 4.5 FX Handling
-*   **Transactions:** Converted to NOK using the *actual* exchange rate at the moment of the trade (stored in `exchange_rate` column).
+*   **Transactions:** Converted to Base Currency using the *actual* exchange rate at the moment of the trade (stored in `exchange_rate` column).
 *   **Current Value:** `(Qty * Live Price * Live FX Rate)`.
 *   **FX Impact:** The system distinguishes between "Stock Performance" (Asset price change) and "FX Performance" (Currency fluctuation) in the Detailed Reports.

@@ -1,6 +1,7 @@
 import pandas as pd
 from scripts.shared.db import get_connection, execute_query
 from scripts.shared.market_data import get_latest_prices, get_exchange_rate
+from scripts.shared.calculations import get_holdings, get_income_and_costs
 from scripts.shared.utils import load_config
 from rich.console import Console
 from rich.table import Table
@@ -170,5 +171,5 @@ def analyze_portfolio():
     console.print("\n[bold]Summary Statistics[/bold]")
     console.print(summary_table)
 
-if __name__ == '__main__':
-    generate_summary()
+if __name__ == "__main__":
+    analyze_portfolio()

@@ -41,13 +41,9 @@ def run_fee_report():
     table_top.add_column("Currency", style="dim")
     table_top.add_column(f"Amount ({BASE_CURRENCY})", justify="right", style="red")
     
-    for _, row in df_top.head(10).iterrows():
-        table_top.add_row(
-            row['date'],
-            row['description'] or "",
-            f"{row['amount_local']:,.2f}"
-        )
+    for _, row in df_top.head(20).iterrows():
+        table_top.add_row(row['date'], row['currency'], f"{row['amount_local']:,.0f}", str(row['source_file']))
     console.print(table_top)
 
 if __name__ == "__main__":
-    analyze_fees()
+    run_fee_report()

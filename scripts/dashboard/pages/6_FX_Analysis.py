@@ -33,9 +33,9 @@ def load_fx_data():
         cost = row['cost_basis_nok']
         
         if qty > 1.0: # Only check if meaningful amount held
-        # Current Rate
-        rate = get_exchange_rate(curr, BASE_CURRENCY)
-        mkt_val = holdings * rate
+            # Current Rate
+            rate = get_exchange_rate(curr, BASE_CURRENCY)
+            mkt_val = qty * rate
             unrealized = mkt_val - cost
         else:
             mkt_val = 0
