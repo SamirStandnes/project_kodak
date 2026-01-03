@@ -1,0 +1,4 @@
+external_id,name,broker,type
+12345678,My Trading Account,Nordnet,Trading
+87654321,My Pension Account,Nordnet,Pension
+11223344,My Margin Account,Saxo,Margin
