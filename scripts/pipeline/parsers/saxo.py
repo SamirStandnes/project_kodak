@@ -3,7 +3,11 @@ import uuid
 import os
 import re
 from typing import List, Dict, Any
-from scripts.shared.utils import clean_num
+from scripts.shared.utils import clean_num, load_config
+
+# --- Configuration ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
 def parse(file_path: str) -> List[Dict[str, Any]]:
     try:
@@ -43,7 +47,8 @@ def parse(file_path: str) -> List[Dict[str, Any]]:
         text = str(row['Event'])
         match = trade_pattern.search(text)
         
-        amt_booked = clean_num(row['Amount'])
+        amt_local = clean_num(row['Amount'])
+        fx_rate = clean_num(row['FXRate']) if 'FXRate' in row and pd.notna(row['FXRate']) else 1.0
         
         item = {
             'external_id': str(uuid.uuid4()),
@@ -54,14 +59,14 @@ def parse(file_path: str) -> List[Dict[str, Any]]:
             'type': 'OTHER',
             'quantity': 0.0,
             'price': 0.0,
-            'amount': amt_booked,
-            'currency': 'NOK',
-            'amount_local': amt_booked,
-            'exchange_rate': clean_num(row['FXRate']) if 'FXRate' in row else 1.0,
+            'amount': amt_local,
+            'currency': BASE_CURRENCY,
+            'amount_local': amt_local,
+            'exchange_rate': fx_rate,
             'description': text,
             'source_file': os.path.basename(file_path),
             'fee': 0.0,
-            'fee_currency': 'NOK',
+            'fee_currency': BASE_CURRENCY,
             'fee_local': 0.0
         }
         
@@ -70,7 +75,14 @@ def parse(file_path: str) -> List[Dict[str, Any]]:
             action = data['action'].lower()
             qty = float(data['quantity'].replace(',', '').replace(' ', ''))
             price = float(data['price'].replace(',', '').replace(' ', ''))
+            raw_curr = data['currency'].upper()
+            
             item['price'] = price
+            item['currency'] = raw_curr
+            
+            # Recalculate raw amount if we have a valid rate
+            if fx_rate > 0 and fx_rate != 1.0:
+                item['amount'] = amt_local / fx_rate
             
             if action in ['kjøp', 'buy']:
                 item['type'] = 'BUY'
@@ -87,10 +99,6 @@ def parse(file_path: str) -> List[Dict[str, Any]]:
             elif 'gebyr' in text.lower() or 'fee' in text.lower(): item['type'] = 'FEE'
             elif 'interest' in text.lower(): item['type'] = 'INTEREST'
             else: item['type'] = 'ADJUSTMENT'
-
-        # Saxo specific: All cash impacts are settled in NOK
-        item['currency'] = 'NOK'
-        item['amount'] = item['amount_local']
 
         results.append(item)
         

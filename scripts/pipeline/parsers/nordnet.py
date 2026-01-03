@@ -2,7 +2,11 @@ import pandas as pd
 import uuid
 import os
 from typing import List, Dict, Any
-from scripts.shared.utils import clean_num
+from scripts.shared.utils import clean_num, load_config
+
+# --- Configuration ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
 def parse(file_path: str) -> List[Dict[str, Any]]:
     try:
@@ -52,17 +56,20 @@ def parse(file_path: str) -> List[Dict[str, Any]]:
             elif 'SKATT' in t_type: std_type = 'TAX'
 
         # 2. Correct Column Swapping
-        v1 = row['Valuta.1'] if pd.notna(row['Valuta.1']) else 'NOK'
-        v2 = row['Valuta.2'] if pd.notna(row['Valuta.2']) else 'NOK'
+        v1 = row['Valuta.1'] if pd.notna(row['Valuta.1']) else BASE_CURRENCY
+        v2 = row['Valuta.2'] if pd.notna(row['Valuta.2']) else BASE_CURRENCY
         a1 = row['Beløp_Clean']
         a2 = row['Kjøpsverdi_Clean']
         
-        if v1 == 'NOK' and v2 != 'NOK':
-            # Auto-FX: Settled in NOK
+        exchange_rate = clean_num(row['Vekslingskurs'])
+
+        if v1 == BASE_CURRENCY and v2 != BASE_CURRENCY:
+            # Auto-FX: Settled in Base (e.g. NOK), Asset is Foreign (e.g. USD)
             amount_local = a1
-            amount = a1 
-            currency = 'NOK' 
-        elif v1 != 'NOK' and v2 == 'NOK':
+            currency = v2 
+            # Back-calculate raw amount
+            amount = a1 / exchange_rate if exchange_rate != 0 else a1
+        elif v1 != BASE_CURRENCY and v2 == BASE_CURRENCY:
             amount = a1
             currency = v1
             amount_local = a2
@@ -90,21 +97,17 @@ def parse(file_path: str) -> List[Dict[str, Any]]:
         else:
             qty = abs(qty)
 
-        exchange_rate = clean_num(row['Vekslingskurs'])
-        if currency != 'NOK' and (pd.isna(row['Vekslingskurs']) or exchange_rate == 0):
-             exchange_rate = 0.0 
-
         # Fix for zero amount_local if rate exists
         if amount_local == 0 and amount != 0 and exchange_rate != 0:
             amount_local = amount * exchange_rate
             
         # Fee Logic
         fee_raw = clean_num(row['Kurtasje_Clean'])
-        fee_currency = row.get('Valuta.4', 'NOK')
-        if pd.isna(fee_currency): fee_currency = 'NOK'
+        fee_currency = row.get('Valuta.4', BASE_CURRENCY)
+        if pd.isna(fee_currency): fee_currency = BASE_CURRENCY
         
         fee_local = 0.0
-        if fee_currency == 'NOK':
+        if fee_currency == BASE_CURRENCY:
             fee_local = fee_raw
         elif fee_raw != 0:
             fee_rate = row.get('Valutakurs_Clean', 0.0)
