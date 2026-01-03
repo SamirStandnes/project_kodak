@@ -1,16 +1,20 @@
 import pandas as pd
-from datetime import datetime
+from scripts.shared.db import get_connection, execute_query
+from scripts.shared.market_data import get_latest_prices, get_exchange_rate
+from scripts.shared.utils import load_config
 from rich.console import Console
 from rich.table import Table
-from scripts.shared.db import get_connection, execute_query, execute_scalar
-from scripts.shared.calculations import get_holdings, get_income_and_costs
-from scripts.shared.market_data import get_exchange_rate
 
-def generate_summary():
+# --- CONFIG ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
+
+def analyze_portfolio():
+    conn = get_connection()
     console = Console()
-    console.print("\n[bold cyan]--- Portfolio Summary Report ---[/bold cyan]\n")
-
-    # 1. Get Holdings
+    
+    # 1. Get Current Holdings
+    # ... (rest of the file)
     df_holdings = get_holdings()
     if df_holdings.empty:
         console.print("[yellow]No holdings found.[/yellow]")
@@ -58,15 +62,15 @@ def generate_summary():
             price_raw = market_data['price']
             curr = market_data['currency']
             
-            # Convert to NOK
-            if curr == 'NOK':
-                price_nok = price_raw
-            else:
-                if curr not in fx_cache:
-                    fx_cache[curr] = get_exchange_rate(curr, 'NOK')
-                
-                rate = fx_cache[curr]
-                price_nok = price_raw * rate
+        # Convert to Base Currency
+        if curr == BASE_CURRENCY:
+            price_nok = price_raw
+            rate = 1.0
+        else:
+            if curr not in fx_cache:
+                fx_cache[curr] = get_exchange_rate(curr, BASE_CURRENCY)
+            rate = fx_cache[curr]
+            price_nok = price_raw * rate
 
         market_value = row['quantity'] * price_nok
         cost_basis = row['cost_basis_local']
@@ -94,10 +98,10 @@ def generate_summary():
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("Symbol")
     table.add_column("Qty", justify="right")
-    table.add_column("Avg Cost (NOK)", justify="right")
+    table.add_column(f"Avg Cost ({BASE_CURRENCY})", justify="right")
     table.add_column("Price", justify="right")
     table.add_column("Curr", style="dim")
-    table.add_column("Market Value (NOK)", justify="right", style="bold yellow")
+    table.add_column(f"Market Value ({BASE_CURRENCY})", justify="right", style="bold yellow")
     table.add_column("Gain/Loss", justify="right")
     table.add_column("Return %", justify="right")
 
@@ -128,18 +132,16 @@ def generate_summary():
     # Calculate Cash Balance properly (Multi-currency)
     cash_by_currency = execute_query("SELECT currency, SUM(amount) as total FROM transactions GROUP BY currency")
     cash_balance_nok = 0.0
-    
-    for row in cash_by_currency:
+    # ... (existing query logic) ...
+    for _, row in cash_rows.iterrows():
         curr = row['currency']
         amt = row['total']
-        if amt == 0: continue
         
-        if curr == 'NOK':
+        if curr == BASE_CURRENCY:
             cash_balance_nok += amt
         else:
             if curr not in fx_cache:
-                fx_cache[curr] = get_exchange_rate(curr, 'NOK')
-            
+                fx_cache[curr] = get_exchange_rate(curr, BASE_CURRENCY)
             rate = fx_cache[curr]
             cash_balance_nok += amt * rate
 
@@ -150,19 +152,20 @@ def generate_summary():
     total_fees = income['fees']
     total_interest = income['interest']
 
-    summary_table = Table(box=None, show_header=False)
-    summary_table.add_column("Metric", style="bold")
-    summary_table.add_row("Total Market Value", f"{total_market_value:,.0f} NOK")
-    summary_table.add_row("Total Cost Basis", f"{total_cost_basis:,.0f} NOK")
+    summary_table = Table(show_header=False, box=None)
+    summary_table.add_row("Total Market Value", f"{total_market_value:,.0f} {BASE_CURRENCY}")
+    summary_table.add_row("Total Cost Basis", f"{total_cost_basis:,.0f} {BASE_CURRENCY}")
+    
     gl_color = "green" if total_gl >= 0 else "red"
-    summary_table.add_row("Total Gain/Loss", f"[{gl_color}]{total_gl:,.0f} NOK[/{gl_color}]")
-    summary_table.add_row("Total Return", f"[{gl_color}]{total_return:.2f}%[/{gl_color}]")
-    summary_table.add_row("Estimated Cash", f"{cash_balance_nok:,.0f} NOK")
-    summary_table.add_row("Total Net Worth", f"{(total_market_value + cash_balance_nok):,.0f} NOK")
+    summary_table.add_row("Total Gain/Loss", f"[{gl_color}]{total_gl:,.0f} {BASE_CURRENCY}[/{gl_color}]")
+    
+    summary_table.add_row("Estimated Cash", f"{cash_balance_nok:,.0f} {BASE_CURRENCY}")
+    summary_table.add_row("Total Net Worth", f"{(total_market_value + cash_balance_nok):,.0f} {BASE_CURRENCY}")
+    
     summary_table.add_section()
-    summary_table.add_row("Total Dividends", f"[green]{total_dividends:,.0f} NOK[/green]")
-    summary_table.add_row("Total Interest", f"{total_interest:,.0f} NOK")
-    summary_table.add_row("Total Fees", f"[red]{total_fees:,.0f} NOK[/red]")
+    summary_table.add_row("Total Dividends", f"[green]{total_dividends:,.0f} {BASE_CURRENCY}[/green]")
+    summary_table.add_row("Total Interest", f"{total_interest:,.0f} {BASE_CURRENCY}")
+    summary_table.add_row("Total Fees", f"[red]{total_fees:,.0f} {BASE_CURRENCY}[/red]")
     
     console.print("\n[bold]Summary Statistics[/bold]")
     console.print(summary_table)

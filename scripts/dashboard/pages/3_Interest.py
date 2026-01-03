@@ -8,10 +8,15 @@ if root_path not in sys.path:
 import streamlit as st
 import pandas as pd
 from scripts.shared.calculations import get_interest_details
+from scripts.shared.utils import load_config
 
-st.set_page_config(page_title="Interest Expense", page_icon="💸", layout="wide")
+# --- CONFIGURATION ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
-st.title("💸 Interest Expense Analysis")
+st.set_page_config(page_title="Interest Analysis", page_icon="🏦", layout="wide")
+
+st.title(f"🏦 Interest Analysis ({BASE_CURRENCY})")
 
 @st.cache_data
 def load_interest_data():
@@ -21,36 +26,36 @@ df_yearly, df_currency, df_top = load_interest_data()
 
 # Summary
 total_interest = df_yearly['total'].sum()
-st.metric("Total Interest Paid (All Time)", f"{total_interest:,.1f} NOK")
+st.metric(f"Total Interest Paid (All Time)", f"{total_interest:,.1f} {BASE_CURRENCY}")
 
 # Charts
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Interest by Year")
+    st.subheader(f"Interest by Year ({BASE_CURRENCY})")
     st.bar_chart(df_yearly.set_index('year'))
 
 with col2:
-    st.subheader("Interest by Currency")
+    st.subheader(f"Interest by Currency ({BASE_CURRENCY})")
     st.dataframe(
         df_currency,
         column_config={
             "currency": st.column_config.TextColumn("Currency"),
-            "total": st.column_config.NumberColumn("Total Interest (NOK)", format="%.1f"),
+            "total": st.column_config.NumberColumn(f"Total Interest ({BASE_CURRENCY})", format="%.1f"),
         },
         use_container_width=True,
         hide_index=True
     )
 
 # Table
-st.subheader("Recent Interest Payments")
+st.subheader(f"Recent Interest Payments ({BASE_CURRENCY})")
 st.dataframe(
     df_top,
     column_config={
         "date": st.column_config.DateColumn("Date"),
         "currency": st.column_config.TextColumn("Curr"),
         "amount": st.column_config.NumberColumn("Amount (Orig)", format="%.1f"),
-        "amount_local": st.column_config.NumberColumn("Amount (NOK)", format="%.1f"),
+        "amount_local": st.column_config.NumberColumn(f"Amount ({BASE_CURRENCY})", format="%.1f"),
         "source_file": st.column_config.TextColumn("Source"),
     },
     use_container_width=True,

@@ -3,16 +3,21 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from scripts.shared.calculations import get_yearly_equity_curve, get_yearly_contribution, get_total_xirr
+from scripts.shared.utils import load_config
+
+# --- CONFIGURATION ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
 st.set_page_config(page_title="Performance", page_icon="📈", layout="wide")
 
-st.title("📈 Portfolio Performance")
+st.title(f"📈 Portfolio Performance ({BASE_CURRENCY})")
 
 # --- 1. All-Time Stats ---
 with st.spinner("Calculating All-Time Performance..."):
     total_xirr = get_total_xirr()
 
-st.metric("All-Time XIRR (Annualized)", f"{total_xirr:.2f}%")
+st.metric(f"All-Time XIRR (Annualized) - {BASE_CURRENCY}", f"{total_xirr:.2f}%")
 st.divider()
 
 # --- 2. Yearly Timeline ---
@@ -29,7 +34,7 @@ if not df_years.empty:
     fig.add_trace(go.Bar(
         x=df_years['year'],
         y=df_years['end_equity'],
-        name='End Equity (NOK)',
+        name=f'End Equity ({BASE_CURRENCY})',
         marker_color='lightblue',
         yaxis='y'
     ))
@@ -48,9 +53,9 @@ if not df_years.empty:
     ))
 
     fig.update_layout(
-        title='Yearly Equity & Returns',
+        title=f'Yearly Equity & Returns ({BASE_CURRENCY})',
         xaxis=dict(title='Year'),
-        yaxis=dict(title='Equity (NOK)', side='left', showgrid=False),
+        yaxis=dict(title=f'Equity ({BASE_CURRENCY})', side='left', showgrid=False),
         yaxis2=dict(title='Return (%)', side='right', overlaying='y', showgrid=True),
         legend=dict(x=0.01, y=0.99),
         hovermode="x unified"

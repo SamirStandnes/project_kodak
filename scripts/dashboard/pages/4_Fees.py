@@ -8,10 +8,15 @@ if root_path not in sys.path:
 import streamlit as st
 import pandas as pd
 from scripts.shared.calculations import get_fee_details
+from scripts.shared.utils import load_config
 
-st.set_page_config(page_title="Fee Analysis", page_icon="🧾", layout="wide")
+# --- CONFIGURATION ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
-st.title("🧾 Fee Analysis")
+st.set_page_config(page_title="Fee Analysis", page_icon="💸", layout="wide")
+
+st.title(f"💸 Fee Analysis ({BASE_CURRENCY})")
 
 @st.cache_data
 def load_fee_data():
@@ -19,37 +24,35 @@ def load_fee_data():
 
 df_yearly, df_currency, df_top = load_fee_data()
 
-# Summary
 total_fees = df_yearly['total'].sum()
-st.metric("Total Fees Paid (All Time)", f"{total_fees:,.1f} NOK")
+st.metric(f"Total Fees Paid (All Time)", f"{total_fees:,.1f} {BASE_CURRENCY}")
 
-# Charts
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Fees by Year")
-    st.bar_chart(df_yearly.set_index('year'))
+    st.subheader(f"Fees by Year ({BASE_CURRENCY})")
+    st.bar_chart(df_yearly.set_index('year'), color="#e67e22")
 
 with col2:
-    st.subheader("Fees by Currency")
+    st.subheader(f"Fees by Currency ({BASE_CURRENCY})")
     st.dataframe(
         df_currency,
         column_config={
             "currency": st.column_config.TextColumn("Currency"),
-            "total": st.column_config.NumberColumn("Total Fees (NOK)", format="%.1f"),
+            "total": st.column_config.NumberColumn(f"Total Fees ({BASE_CURRENCY})", format="%.1f"),
         },
         use_container_width=True,
         hide_index=True
     )
 
-# Table
-st.subheader("Recent Fees")
+st.divider()
+st.subheader(f"Recent Individual Fees ({BASE_CURRENCY})")
 st.dataframe(
     df_top,
     column_config={
         "date": st.column_config.DateColumn("Date"),
-        "currency": st.column_config.TextColumn("Curr"),
-        "amount_local": st.column_config.NumberColumn("Fee (NOK)", format="%.1f"),
+        "currency": st.column_config.TextColumn("Fee Currency"),
+        "amount_local": st.column_config.NumberColumn(f"Fee ({BASE_CURRENCY})", format="%.1f"),
         "source_file": st.column_config.TextColumn("Source"),
     },
     use_container_width=True,

@@ -8,10 +8,15 @@ if root_path not in sys.path:
 import streamlit as st
 import pandas as pd
 from scripts.shared.db import get_connection
+from scripts.shared.utils import load_config
 
-st.set_page_config(page_title="Recent Activity", page_icon="📜", layout="wide")
+# --- CONFIGURATION ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
-st.title("📜 Recent Activity")
+st.set_page_config(page_title="Activity", page_icon="📝", layout="wide")
+
+st.title(f"📝 Portfolio Activity ({BASE_CURRENCY})")
 
 # --- CONTROLS ---
 col1, col2 = st.columns([2, 1])
@@ -70,7 +75,7 @@ st.dataframe(
         "price": st.column_config.NumberColumn("Price", format="%.2f"),
         "amount": st.column_config.NumberColumn("Amount", format="%.2f"),
         "currency": st.column_config.TextColumn("Curr"),
-        "amount_local": st.column_config.NumberColumn("Amount (NOK)", format="%.2f"),
+        "amount_local": st.column_config.NumberColumn(f"Amount ({BASE_CURRENCY})", format="%.2f"),
         "batch_id": st.column_config.TextColumn("Batch ID"),
         "source_file": st.column_config.TextColumn("Source"),
         "description": st.column_config.TextColumn("Notes"),

@@ -9,10 +9,15 @@ import streamlit as st
 import pandas as pd
 from scripts.shared.calculations import get_fx_performance
 from scripts.shared.market_data import get_exchange_rate
+from scripts.shared.utils import load_config
+
+# --- CONFIGURATION ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
 st.set_page_config(page_title="FX Analysis", page_icon="💱", layout="wide")
 
-st.title("💱 Currency Exchange Analysis")
+st.title(f"💱 Currency Performance ({BASE_CURRENCY})")
 
 @st.cache_data
 def load_fx_data():
@@ -28,8 +33,9 @@ def load_fx_data():
         cost = row['cost_basis_nok']
         
         if qty > 1.0: # Only check if meaningful amount held
-            rate = get_exchange_rate(curr, 'NOK')
-            mkt_val = qty * rate
+        # Current Rate
+        rate = get_exchange_rate(curr, BASE_CURRENCY)
+        mkt_val = holdings * rate
             unrealized = mkt_val - cost
         else:
             mkt_val = 0
@@ -55,9 +61,9 @@ else:
     total_unrealized = df['unrealized_pl_nok'].sum()
     
     col1, col2, col3 = st.columns(3)
-    col1.metric("Total Realized FX Gain", f"{total_realized:,.0f} NOK")
-    col2.metric("Total Unrealized FX Gain", f"{total_unrealized:,.0f} NOK")
-    col3.metric("Total FX P&L", f"{total_realized + total_unrealized:,.0f} NOK")
+    col1.metric("Total Realized FX Gain", f"{total_realized:,.0f} {BASE_CURRENCY}")
+    col2.metric("Total Unrealized FX Gain", f"{total_unrealized:,.0f} {BASE_CURRENCY}")
+    col3.metric("Total FX P&L", f"{total_realized + total_unrealized:,.0f} {BASE_CURRENCY}")
     
     st.divider()
     
@@ -67,11 +73,11 @@ else:
         df,
         column_config={
             "currency": st.column_config.TextColumn("Currency"),
-            "realized_pl_nok": st.column_config.NumberColumn("Realized P&L (NOK)", format="%.0f"),
+            "realized_pl_nok": st.column_config.NumberColumn(f"Realized P&L ({BASE_CURRENCY})", format="%.0f"),
             "holdings": st.column_config.NumberColumn("Current Holdings (Qty)", format="%.2f"),
-            "cost_basis_nok": st.column_config.NumberColumn("Cost Basis (NOK)", format="%.0f"),
-            "market_value_nok": st.column_config.NumberColumn("Market Value (NOK)", format="%.0f"),
-            "unrealized_pl_nok": st.column_config.NumberColumn("Unrealized P&L (NOK)", format="%.0f"),
+            "cost_basis_nok": st.column_config.NumberColumn(f"Cost Basis ({BASE_CURRENCY})", format="%.0f"),
+            "market_value_nok": st.column_config.NumberColumn(f"Market Value ({BASE_CURRENCY})", format="%.0f"),
+            "unrealized_pl_nok": st.column_config.NumberColumn(f"Unrealized P&L ({BASE_CURRENCY})", format="%.0f"),
         },
         use_container_width=True,
         hide_index=True

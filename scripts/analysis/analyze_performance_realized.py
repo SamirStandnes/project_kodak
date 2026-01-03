@@ -1,9 +1,14 @@
-import pandas as pd
+from scripts.shared.db import get_connection
+from scripts.shared.calculations import get_realized_performance
+from scripts.shared.utils import load_config
 from rich.console import Console
 from rich.table import Table
-from scripts.shared.calculations import get_realized_performance
 
-def analyze_performance():
+# --- CONFIG ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
+
+def run():
     console = Console()
     console.print("\n[bold cyan]--- Yearly Performance Analysis (Realized) ---[/bold cyan]\n")
     
@@ -14,7 +19,7 @@ def analyze_performance():
         return
 
     # Create Table
-    table = Table(show_header=True, header_style="bold magenta")
+    table = Table(title=f"Realized Performance (Annual) - {BASE_CURRENCY}")
     table.add_column("Year", justify="center")
     table.add_column("Realized GL", justify="right")
     table.add_column("Dividends", justify="right")
@@ -45,7 +50,7 @@ def analyze_performance():
     # Grand Total
     total_pl = df['total_pl'].sum()
     total_style = "green" if total_pl >= 0 else "red"
-    console.print(f"\n[bold]Grand Total Realized P&L (All Time):[/bold] [{total_style}]{total_pl:,.0f} NOK[/{total_style}]")
+    console.print(f"\n[bold]Grand Total Realized P&L (All Time):[/bold] [{total_style}]{total_pl:,.0f} {BASE_CURRENCY}[/{total_style}]")
 
 if __name__ == '__main__':
     analyze_performance()

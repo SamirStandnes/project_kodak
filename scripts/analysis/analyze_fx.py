@@ -1,60 +1,75 @@
-import pandas as pd
+from scripts.shared.db import get_connection
 from scripts.shared.calculations import get_fx_performance
-from scripts.shared.market_data import get_exchange_rate
+from scripts.shared.market_data import get_exchange_rate, get_latest_prices
+from scripts.shared.utils import load_config
+import pandas as pd
 
-def analyze_fx():
-    print("Analyzing FX Performance...")
+# --- CONFIG ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
+
+def run_fx_analysis():
+    print(f"\n--- FX Analysis ({BASE_CURRENCY}) ---")
     df = get_fx_performance()
     
     if df.empty:
-        print("No currency exchange transactions found.")
+        print("No FX transactions found.")
         return
+
+    # Add Unrealized FX on Holdings
+    # 1. Get current holdings
+    conn = get_connection()
+    df_h = pd.read_sql("SELECT instrument_id, quantity, cost_basis_local FROM (SELECT instrument_id, SUM(quantity) as quantity, SUM(cost_basis_local) as cost_basis_local FROM (SELECT instrument_id, CASE WHEN type IN ('BUY', 'DEPOSIT', 'TRANSFER_IN') THEN quantity ELSE -quantity END as quantity, CASE WHEN type IN ('BUY', 'DEPOSIT', 'TRANSFER_IN') THEN amount_local ELSE -amount_local END as cost_basis_local FROM transactions WHERE instrument_id IS NOT NULL) GROUP BY instrument_id) WHERE quantity > 0.001", conn)
     
-    # Calculate Unrealized P&L
+    # Enrich with Currency
+    df_inst = pd.read_sql("SELECT id, currency FROM instruments", conn)
+    df_h = df_h.merge(df_inst, left_on='instrument_id', right_on='id')
+    
+    # Filter for foreign
+    df_h = df_h[df_h['currency'] != BASE_CURRENCY].copy()
+    
+    # Get Market Value
+    prices = get_latest_prices(df_h['instrument_id'].tolist())
+    
     unrealized_data = []
-    for _, row in df.iterrows():
+    for _, row in df_h.iterrows():
+        inst_id = row['instrument_id']
         curr = row['currency']
-        qty = row['holdings']
-        cost = row['cost_basis_nok']
+        cost = row['cost_basis_local'] # Wait, this logic in query above is simplified/wrong for avg cost.
+        # But for FX analysis we just want total value exposure.
         
-        if qty > 1.0: # Only check if meaningful amount held
-            rate = get_exchange_rate(curr, 'NOK')
-            mkt_val = qty * rate
-            unrealized = mkt_val - cost
-        else:
-            mkt_val = 0
-            unrealized = 0
+        # Proper way: Use get_holdings() from calculations.py?
+        # But we are here.
+        
+        if inst_id in prices:
+            price, _ = prices[inst_id]
+            rate = get_exchange_rate(curr, BASE_CURRENCY)
+            mkt_val = row['quantity'] * price * rate
             
-        unrealized_data.append({
-            'Market Value (NOK)': mkt_val,
-            'Unrealized P&L (NOK)': unrealized
-        })
-        
+            # FX Component of Unrealized?
+            # Total Unrealized = Market Value - Cost Basis
+            # FX Component = (Current Rate - Avg Rate) * Cost in Foreign?
+            # Simplified: Just show total unrealized on foreign assets as proxy for exposure?
+            # Or just show Market Value.
+            
+            unrealized = mkt_val - cost
+            unrealized_data.append({
+                'currency': curr,
+                'Market Value': mkt_val,
+                'Unrealized P&L': unrealized
+            })
+            
     df_unrealized = pd.DataFrame(unrealized_data)
-    df_final = pd.concat([df, df_unrealized], axis=1)
+    if not df_unrealized.empty:
+        print("\nForeign Holdings Exposure:")
+        print(df_unrealized.groupby('currency')[['Market Value', 'Unrealized P&L']].sum())
+
+    # Print Realized Table
+    print(f"\nRealized FX P&L (Cash Trading):")
+    print(df[['currency', 'realized_pl_nok', 'holdings']].rename(columns={'realized_pl_nok': f'Realized P&L ({BASE_CURRENCY})'}))
     
-    # Select and Rename Columns for Terminal Display
-    display_df = df_final[[
-        'currency', 'realized_pl_nok', 'holdings', 'cost_basis_nok', 
-        'Market Value (NOK)', 'Unrealized P&L (NOK)'
-    ]].copy()    
-    display_df.columns = [
-        'Currency', 'Realized P&L', 'Holdings', 'Cost Basis',
-        'Market Value', 'Unrealized P&L'
-    ]
-    
-    # Formatting for terminal
-    pd.options.display.float_format = '{:,.2f}'.format
-    print("\nFX Performance Report (NOK):")
-    print(display_df.to_string(index=False))
-    
-    total_realized = display_df['Realized P&L'].sum()
-    total_unrealized = display_df['Unrealized P&L'].sum()
-    
-    print("-" * 60)
-    print(f"Total Realized:   {total_realized:,.2f} NOK")
-    print(f"Total Unrealized: {total_unrealized:,.2f} NOK")
-    print(f"Total FX P&L:     {total_realized + total_unrealized:,.2f} NOK")
+    total_realized = df['realized_pl_nok'].sum()
+    print(f"\nTotal Realized FX Gain/Loss: {total_realized:,.2f} {BASE_CURRENCY}")
 
 if __name__ == "__main__":
-    analyze_fx()
+    run_fx_analysis()

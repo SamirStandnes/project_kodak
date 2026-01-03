@@ -9,13 +9,17 @@ if root_path not in sys.path:
 
 import streamlit as st
 import pandas as pd
-from scripts.shared.db import get_connection
 from scripts.shared.calculations import get_holdings
-from scripts.shared.market_data import get_exchange_rate
+from scripts.shared.market_data import get_latest_prices, get_exchange_rate
+from scripts.shared.utils import load_config
 
-st.set_page_config(page_title="Current Holdings", page_icon="💼", layout="wide")
+# --- CONFIGURATION ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
-st.title("💼 Current Holdings")
+st.set_page_config(page_title="Holdings", page_icon="🏦", layout="wide")
+
+st.title(f"Current Holdings ({BASE_CURRENCY})")
 
 @st.cache_data
 def load_holdings_data():
@@ -60,15 +64,18 @@ def load_holdings_data():
         if not mkt:
             continue # Skip unpriced (handled by gap check)
             
-        curr = mkt['currency']
-        price = mkt['price']
+        price = 0
+        curr = BASE_CURRENCY
         
-        # FX
-        if curr == 'NOK':
+        if mkt:
+            price, curr = mkt
+            
+        # FX Conversion
+        if curr == BASE_CURRENCY:
             rate = 1.0
         else:
             if curr not in fx_cache:
-                fx_cache[curr] = get_exchange_rate(curr, 'NOK')
+                fx_cache[curr] = get_exchange_rate(curr, BASE_CURRENCY)
             rate = fx_cache[curr]
             
         market_val_nok = row['quantity'] * price * rate
@@ -101,15 +108,15 @@ def load_holdings_data():
 df = load_holdings_data()
 
 # Summary Metrics for this page
-st.metric("Total Equity Value", f"{df['Market Value'].sum():,.1f} NOK")
+st.metric("Total Equity Value", f"{df['Market Value'].sum():,.1f} {BASE_CURRENCY}")
 
 # Styling the dataframe
 st.dataframe(
     df,
     column_config={
         "Quantity": st.column_config.NumberColumn(format="%.1f"),
-        "Market Value": st.column_config.NumberColumn(format="%.1f"),
-        "Gain/Loss": st.column_config.NumberColumn(format="%.1f"),
+        "Market Value": st.column_config.NumberColumn(f"Market Value ({BASE_CURRENCY})", format="%.1f"),
+        "Gain/Loss": st.column_config.NumberColumn(f"Gain/Loss ({BASE_CURRENCY})", format="%.1f"),
         "Return %": st.column_config.NumberColumn(format="%.1f%%"),
         "Weight %": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
     },

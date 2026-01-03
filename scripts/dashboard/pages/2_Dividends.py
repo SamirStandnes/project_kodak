@@ -9,10 +9,15 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from scripts.shared.calculations import get_dividend_details
+from scripts.shared.utils import load_config
+
+# --- CONFIGURATION ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
 st.set_page_config(page_title="Dividend Analysis", page_icon="💰", layout="wide")
 
-st.title("💰 Dividend Analysis")
+st.title(f"💰 Dividend Analysis ({BASE_CURRENCY})")
 
 @st.cache_data
 def load_dividend_data():
@@ -24,16 +29,16 @@ df_yearly, df_2025, df_all_time = load_dividend_data()
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.subheader("Dividends by Year")
+    st.subheader(f"Dividends by Year ({BASE_CURRENCY})")
     st.bar_chart(df_yearly.set_index('year'), color="#2ecc71")
 
 with col2:
-    st.subheader("Top Payers (2025)")
+    st.subheader(f"Top Payers (Current Year) - {BASE_CURRENCY}")
     st.dataframe(
         df_2025,
         column_config={
             "symbol": st.column_config.TextColumn("Instrument"),
-            "total": st.column_config.NumberColumn("Total (NOK)", format="%.0f"),
+            "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="%.0f"),
         },
         use_container_width=True,
         hide_index=True
@@ -41,12 +46,12 @@ with col2:
 
 st.divider()
 
-st.subheader("Top Payers (All Time)")
+st.subheader(f"Top Payers (All Time) - {BASE_CURRENCY}")
 st.dataframe(
     df_all_time.head(30),
     column_config={
         "symbol": st.column_config.TextColumn("Instrument"),
-        "total": st.column_config.NumberColumn("Total Payout (NOK)", format="%.0f"),
+        "total": st.column_config.NumberColumn(f"Total Payout ({BASE_CURRENCY})", format="%.0f"),
     },
     use_container_width=True,
     hide_index=True

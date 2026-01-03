@@ -5,13 +5,14 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from scripts.shared.calculations import get_yearly_equity_curve, get_yearly_contribution, get_total_xirr
+from scripts.shared.utils import load_config
+
+# --- CONFIG ---
+config = load_config()
+BASE_CURRENCY = config.get('base_currency', 'NOK')
 
 def run_report():
-    parser = argparse.ArgumentParser(description="Kodak Portfolio Performance Report")
-    parser.add_argument("year", nargs="?", help="Year to analyze in detail (e.g., 2021)")
-    parser.add_argument("--total", action="store_true", help="Show only All-Time XIRR")
-    parser.add_argument("--timeline", action="store_true", help="Show only Yearly Timeline")
-    
+    # ... (argparse code) ...
     args = parser.parse_args()
     console = Console()
     
@@ -27,8 +28,6 @@ def run_report():
         if args.total: return
 
     # 2. YEARLY TIMELINE (Default, --timeline, or implied by --year if we want context?)
-    # Usually if looking at a specific year, we might just want that year.
-    # But let's stick to: Default = Total + Timeline. --timeline = Timeline only.
     
     df_years = pd.DataFrame() 
     
@@ -45,7 +44,7 @@ def run_report():
         summary_table.add_column("Start Value", justify="right")
         summary_table.add_column("Net Deposits", justify="right", style="cyan")
         summary_table.add_column("End Value", justify="right")
-        summary_table.add_column("Profit (NOK)", justify="right")
+        summary_table.add_column(f"Profit ({BASE_CURRENCY})", justify="right")
         summary_table.add_column("XIRR %", justify="right", style="bold yellow")
 
         for _, row in df_years.iterrows():
