@@ -8,3 +8,32 @@ data_dir: data
 reference_dir: data/reference
 isin_map_file: isin_map.csv
 accounts_map_file: accounts_map.csv
+
+# Transaction Type Classification
+# These lists define which transaction types are considered inflows/outflows for calculations.
+# Add broker-specific types here if your parser uses non-standard type names.
+transaction_types:
+  # Inflow types: Transactions that ADD shares/assets to your portfolio
+  inflow:
+    - BUY
+    - DEPOSIT
+    - TRANSFER_IN
+    - TILDELING INNLEGG RE      # Nordnet: Rights issue deposit
+    - BYTTE INNLEGG VP          # Nordnet: Exchange/split deposit
+    - EMISJON INNLEGG VP        # Nordnet: Emission deposit
+
+  # Outflow types: Transactions that REMOVE shares/assets from your portfolio
+  outflow:
+    - SELL
+    - WITHDRAWAL
+    - TRANSFER_OUT
+    - BYTTE UTTAK VP            # Nordnet: Exchange/split withdrawal
+    - INNLØSN. UTTAK VP         # Nordnet: Redemption withdrawal
+
+  # External flow types: Cash movements for XIRR calculation
+  external_flows:
+    - DEPOSIT
+    - WITHDRAWAL
+    - TRANSFER_IN
+    - TRANSFER_OUT
+    - OVERFØRING VIA TRUSTLY    # Nordnet: Trustly transfer

@@ -6,10 +6,10 @@ Write-Host "--- Kodak Portfolio: Refresh Market Data ---" -ForegroundColor Cyan
 
 # 1. Map ISINs (Ensure metadata is up to date)
 Write-Host "`n[1/2] Checking for missing ISIN mappings..." -ForegroundColor Yellow
-python -m scripts.pipeline.map_isins
+python -m kodak.pipeline.map_isins
 
 # 2. Fetch Prices
 Write-Host "`n[2/2] Fetching latest market prices..." -ForegroundColor Yellow
-python -m scripts.pipeline.fetch_prices
+python -m kodak.pipeline.fetch_prices
 
 Write-Host "`n[SUCCESS] Market data refreshed." -ForegroundColor Green

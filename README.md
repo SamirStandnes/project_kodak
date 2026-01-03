@@ -30,7 +30,7 @@ This setting affects:
 
 ## 🛠 Setup
 
-For a detailed, step-by-step walkthrough from scratch, see our **[Getting Started Guide](GETTING_STARTED.md)**.
+For a detailed, step-by-step walkthrough from scratch, see our **[Getting Started Guide](docs/GETTING_STARTED.md)**.
 
 ### 1. Prerequisites
 Ensure you have **Python 3.9+** installed.
@@ -46,7 +46,7 @@ pip install -r requirements.txt
 ### 3. Initialize Database
 Create your local SQLite database and structure:
 ```bash
-python -m scripts.setup.initialize_database
+python -m kodak.setup.initialize_database
 ```
 
 ---
@@ -54,17 +54,19 @@ python -m scripts.setup.initialize_database
 ## 📂 Project Structure
 
 ```text
+├── kodak/                     <-- Main package
+│   ├── shared/                <-- Core utilities (db, calculations, market_data)
+│   ├── pipeline/              <-- Data ingestion & enrichment
+│   │   └── parsers/           <-- Broker plugins (nordnet, saxo, etc.)
+│   ├── cli/                   <-- Terminal analysis tools
+│   ├── dashboard/             <-- Streamlit UI
+│   ├── setup/                 <-- Database initialization
+│   └── maintenance/           <-- Helper scripts
 ├── data/
 │   ├── new_raw_transactions/  <-- Place broker exports here
-│   │   ├── nordnet/
-│   │   └── saxo/
 │   └── reference/             <-- ISIN and Account mappings
-├── scripts/
-│   ├── analysis/              <-- Terminal-based analysis tools
-│   ├── dashboard/             <-- Streamlit UI code
-│   ├── pipeline/              <-- Core data processing
-│   │   └── parsers/           <-- Broker plugins
-│   └── shared/                <-- Reusable logic & DB helpers
+├── tests/                     <-- Unit tests
+├── workflows/                 <-- PowerShell automation scripts
 └── database/                  <-- SQLite storage and backups
 ```
 
@@ -89,17 +91,16 @@ To see how your portfolio is doing today without adding new data:
 
 ### Launching the Dashboard
 ```bash
-streamlit run scripts/dashboard/Home.py
+streamlit run kodak/dashboard/Home.py
 ```
 
 ## 📊 Terminal Analysis Tools
 
 Prefer the command line? Use these scripts for quick insights:
-- **Portfolio Summary:** `python -m scripts.analysis.analyze_portfolio` (Current Value & Unrealized Gains)
-- **Yearly Performance:** `python -m scripts.analysis.performance.realized` (Realized Gains, Dividends, & Cash Flow)
-- **XIRR % Returns:** `python -m scripts.analysis.performance.returns` (Money-weighted returns by year)
-- **FX Analysis:** `python -m scripts.analysis.analyze_fx` (Currency P&L)
-- **Dividends/Fees/Interest:** Check `scripts/analysis/` for more specialized tools.
+- **Portfolio Summary:** `python -m kodak.cli.analyze_portfolio` (Current Value & Unrealized Gains)
+- **Yearly Performance:** `python -m kodak.cli.analyze_performance_realized` (Realized Gains, Dividends, & Cash Flow)
+- **FX Analysis:** `python -m kodak.cli.analyze_fx` (Currency P&L)
+- **Dividends/Fees/Interest:** Check `kodak/cli/` for more specialized tools.
 
 ---
 
@@ -110,17 +111,37 @@ Project Kodak is designed to be infinitely extensible. To add a new broker (e.g.
 1.  **Create Folder:** `data/new_raw_transactions/robinhood/`
 2.  **Inspect Sample:** Run our helper to see the file structure:
     ```bash
-    python -m scripts.maintenance.inspect_file path/to/sample.csv
+    python -m kodak.maintenance.inspect_file path/to/sample.csv
     ```
-3.  **Create Parser:** Create `scripts/pipeline/parsers/robinhood.py`.
-4.  **Implement:** Define a `parse(file_path)` function that returns the standard transaction schema. 
+3.  **Create Parser:** Create `kodak/pipeline/parsers/robinhood.py`.
+4.  **Implement:** Define a `parse(file_path)` function that returns the standard transaction schema.
 
 *(Tip: You can paste the output of the inspection tool into an AI like ChatGPT/Claude to have it write the parser for you in seconds!)*
 
 ---
 
-## ⚖️ License
-MIT License - feel free to use and modify!
+## 🧪 Testing
+
+Run the test suite to verify everything works:
+```bash
+pytest tests/ -v
+```
 
 ---
-👀 **Curious about what's next?** Check out our [ROADMAP](ROADMAP.md)!
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) for:
+- Development setup
+- Code style guidelines
+- How to add new broker parsers
+- Areas where help is needed
+
+---
+
+## ⚖️ License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+👀 **Curious about what's next?** Check out our [ROADMAP](docs/ROADMAP.md)!
