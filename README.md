@@ -89,6 +89,25 @@ To see how your portfolio is doing today without adding new data:
 .\workflows\refresh_market_data.ps1
 ```
 
+### Automate Daily Updates (Optional)
+Set up a scheduled task to refresh prices automatically:
+
+**Windows (Task Scheduler):**
+1. Open Task Scheduler → Create Basic Task
+2. Trigger: "When I log on" or "Daily"
+3. Action: Start a program
+   - Program: `powershell.exe`
+   - Arguments: `-ExecutionPolicy Bypass -File "C:\path\to\kodak-portfolio\workflows\refresh_market_data.ps1"`
+
+**Mac/Linux (cron):**
+```bash
+# Edit crontab
+crontab -e
+
+# Add line to run daily at 8am
+0 8 * * * cd /path/to/kodak-portfolio && python -m kodak.pipeline.fetch_prices && python -m kodak.pipeline.enrich_fx
+```
+
 ### Launching the Dashboard
 ```bash
 streamlit run kodak/dashboard/Home.py
