@@ -108,7 +108,7 @@ chmod +x workflows/refresh_market_data.sh
 crontab -e
 
 # Add line to run daily at 8am
-0 8 * * * cd /path/to/kodak-portfolio && ./workflows/refresh_market_data.sh
+0 8 * * * /path/to/kodak-portfolio/workflows/refresh_market_data.sh
 ```
 
 ### Launching the Dashboard

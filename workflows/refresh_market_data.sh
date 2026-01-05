@@ -4,6 +4,9 @@
 
 set -e
 
+# Change to script's directory (so it works from cron)
+cd "$(dirname "$0")/.."
+
 echo "--- Kodak Portfolio: Refresh Market Data ---"
 
 # 1. Map ISINs (Ensure metadata is up to date)
