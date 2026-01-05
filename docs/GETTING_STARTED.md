@@ -11,8 +11,8 @@ Welcome to Project Kodak! This guide will take you from a fresh computer to a fu
 2.  **Install Git:** Download and install [Git](https://git-scm.com/downloads).
 3.  **Download Project:** Open a terminal (PowerShell on Windows) and run:
     ```powershell
-    git clone https://github.com/SamirStandnes/project_kodak.git
-    cd project_kodak
+    git clone https://github.com/SamirStandnes/kodak-portfolio.git
+    cd kodak-portfolio
     ```
 4.  **Install Dependencies:**
     ```powershell

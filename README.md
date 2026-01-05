@@ -38,8 +38,8 @@ Ensure you have **Python 3.9+** installed.
 ### 2. Installation
 Clone the repository and install dependencies:
 ```bash
-git clone https://github.com/SamirStandnes/project_kodak.git
-cd project_kodak
+git clone https://github.com/SamirStandnes/kodak-portfolio.git
+cd kodak-portfolio
 pip install -r requirements.txt
 ```
 
