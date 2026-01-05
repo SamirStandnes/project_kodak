@@ -101,11 +101,14 @@ Set up a scheduled task to refresh prices automatically:
 
 **Mac/Linux (cron):**
 ```bash
+# Make script executable (one-time)
+chmod +x workflows/refresh_market_data.sh
+
 # Edit crontab
 crontab -e
 
 # Add line to run daily at 8am
-0 8 * * * cd /path/to/kodak-portfolio && python -m kodak.pipeline.fetch_prices && python -m kodak.pipeline.enrich_fx
+0 8 * * * cd /path/to/kodak-portfolio && ./workflows/refresh_market_data.sh
 ```
 
 ### Launching the Dashboard
