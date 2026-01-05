@@ -587,10 +587,12 @@ def get_fee_details():
 
 def get_fx_performance():
     """
-    Calculates Realized P&L, Remaining Holdings, and Cost Basis for FX trades.
+    Calculates Realized P&L, Remaining Holdings, and Cost Basis for foreign currency.
+    Includes ALL transaction types (BUY, SELL, DIVIDEND, INTEREST, CURRENCY_EXCHANGE, etc.)
+    to compute the true foreign currency cash balance.
     Returns a DataFrame.
     """
-    # Fetch all FX transactions for non-base-currency
+    # Fetch all transactions in non-base currencies
     query = f"""
         SELECT
             date,
@@ -598,8 +600,7 @@ def get_fx_performance():
             amount as quantity,
             amount_local
         FROM transactions
-        WHERE type = 'CURRENCY_EXCHANGE'
-          AND currency != '{BASE_CURRENCY}'
+        WHERE currency != '{BASE_CURRENCY}'
         ORDER BY date, id
     """
 
@@ -658,6 +659,208 @@ def get_fx_performance():
         })
 
     return pd.DataFrame(results)
+
+
+def get_fx_performance_detailed():
+    """
+    Comprehensive FX P&L calculation including both cash and securities.
+
+    FX P&L on securities = how much you gained/lost due to exchange rate changes.
+    - Realized: On sold positions, (sale_rate - avg_purchase_rate) × foreign_proceeds
+    - Unrealized: On current holdings, (current_rate - avg_purchase_rate) × current_foreign_value
+
+    Returns a DataFrame with columns:
+        currency, cash_holdings, realized_cash_pl, unrealized_cash_pl,
+        realized_securities_pl, unrealized_securities_pl, total_realized_pl, total_unrealized_pl
+    """
+    from kodak.shared.market_data import get_exchange_rate, get_latest_prices
+
+    # Get all transactions, using instrument currency for securities
+    # Note: t.currency is settlement currency, i.currency is trading currency
+    query = f"""
+        SELECT
+            t.date, t.type, t.instrument_id, t.quantity, t.amount, t.currency,
+            t.exchange_rate, t.amount_local, i.symbol,
+            COALESCE(i.currency, t.currency) as effective_currency
+        FROM transactions t
+        LEFT JOIN instruments i ON t.instrument_id = i.id
+        ORDER BY t.date, t.id
+    """
+
+    with get_db_connection() as conn:
+        df = pd.read_sql_query(query, conn)
+
+    if df.empty:
+        return pd.DataFrame()
+
+    # Track state per currency (for cash - only non-security transactions)
+    currency_state = {}  # currency -> {cash_holdings, cash_cost, cash_realized_pl}
+
+    # Track state per instrument (for securities FX P&L)
+    # We need: qty, foreign_cost_basis, local_cost_basis to compute avg_purchase_rate
+    instrument_state = {}  # instrument_id -> {qty, foreign_cost, local_cost, currency, realized_fx_pl}
+
+    for _, row in df.iterrows():
+        txn_currency = row['currency']  # Settlement currency
+        effective_currency = row['effective_currency']  # Instrument currency or txn currency
+        inst_id = row['instrument_id']
+        amount = row['amount']
+        amount_local = row['amount_local']
+        exchange_rate = row['exchange_rate'] if pd.notna(row['exchange_rate']) else 1.0
+        t_type = row['type']
+        qty = row['quantity'] if pd.notna(row['quantity']) else 0
+
+        # --- Handle securities (BUY/SELL) ---
+        if pd.notna(inst_id) and t_type in ['BUY', 'SELL']:
+            # Use instrument's currency for FX exposure
+            security_currency = effective_currency
+
+            # Skip if security is in base currency (no FX exposure)
+            if security_currency == BASE_CURRENCY:
+                continue
+
+            if inst_id not in instrument_state:
+                instrument_state[inst_id] = {
+                    'qty': 0.0,
+                    'foreign_cost': 0.0,
+                    'local_cost': 0.0,
+                    'currency': security_currency,
+                    'realized_fx_pl': 0.0,
+                    'symbol': row['symbol']
+                }
+            ist = instrument_state[inst_id]
+
+            # Derive foreign amount from local amount and exchange rate
+            # If exchange_rate is stored, foreign = local / rate
+            # If txn_currency == security_currency, amount is already in foreign currency
+            if txn_currency == security_currency:
+                foreign_amount = abs(amount)
+            elif exchange_rate > 0:
+                foreign_amount = abs(amount_local) / exchange_rate
+            else:
+                foreign_amount = abs(amount_local)  # Fallback
+
+            local_amount = abs(amount_local)
+
+            if t_type == 'BUY':
+                ist['qty'] += qty
+                ist['foreign_cost'] += foreign_amount
+                ist['local_cost'] += local_amount
+
+            elif t_type == 'SELL' and ist['qty'] > 0:
+                # Calculate avg purchase rate
+                avg_purchase_rate = ist['local_cost'] / ist['foreign_cost'] if ist['foreign_cost'] > 0 else exchange_rate
+
+                # FX P&L = foreign_proceeds × (sale_rate - avg_purchase_rate)
+                fx_pl = foreign_amount * (exchange_rate - avg_purchase_rate)
+                ist['realized_fx_pl'] += fx_pl
+
+                # Reduce cost basis proportionally
+                portion = min(abs(qty) / ist['qty'], 1.0)
+                ist['qty'] += qty  # qty is negative for SELL
+                ist['foreign_cost'] -= ist['foreign_cost'] * portion
+                ist['local_cost'] -= ist['local_cost'] * portion
+
+                if abs(ist['qty']) < 0.001:
+                    ist['qty'] = 0
+                    ist['foreign_cost'] = 0
+                    ist['local_cost'] = 0
+
+        # --- Handle cash flows (non-security transactions only) ---
+        elif pd.isna(inst_id) and txn_currency != BASE_CURRENCY:
+            if txn_currency not in currency_state:
+                currency_state[txn_currency] = {
+                    'cash_holdings': 0.0,
+                    'cash_cost': 0.0,
+                    'cash_realized_pl': 0.0
+                }
+            cs = currency_state[txn_currency]
+
+            if amount > 0:
+                cs['cash_holdings'] += amount
+                cs['cash_cost'] += abs(amount_local)
+            elif amount < 0:
+                if cs['cash_holdings'] > 0:
+                    portion = min(abs(amount) / cs['cash_holdings'], 1.0)
+                    cost_portion = cs['cash_cost'] * portion
+                    proceeds_local = abs(amount_local)
+                    cs['cash_realized_pl'] += proceeds_local - cost_portion
+                    cs['cash_cost'] -= cost_portion
+                cs['cash_holdings'] += amount
+
+                if abs(cs['cash_holdings']) < 0.01:
+                    cs['cash_holdings'] = 0
+                    cs['cash_cost'] = 0
+
+    # --- Calculate unrealized FX P&L for current holdings ---
+    holdings_df = get_holdings()
+    inst_currency_map = {}
+    prices = {}
+
+    if not holdings_df.empty:
+        with get_db_connection() as conn:
+            inst_currencies = pd.read_sql_query("SELECT id, currency FROM instruments", conn)
+        inst_currency_map = dict(zip(inst_currencies['id'], inst_currencies['currency']))
+        prices = get_latest_prices(holdings_df['instrument_id'].tolist())
+
+    # Build results per currency
+    all_currencies = set(currency_state.keys())
+    for ist in instrument_state.values():
+        all_currencies.add(ist['currency'])
+
+    results = []
+    for currency in sorted(all_currencies):
+        cs = currency_state.get(currency, {'cash_holdings': 0, 'cash_cost': 0, 'cash_realized_pl': 0})
+        current_rate = get_exchange_rate(currency, BASE_CURRENCY)
+
+        # Realized FX P&L from securities
+        realized_securities_pl = sum(
+            ist['realized_fx_pl'] for ist in instrument_state.values() if ist['currency'] == currency
+        )
+
+        # Unrealized FX P&L from current holdings
+        unrealized_securities_pl = 0.0
+        if not holdings_df.empty:
+            for _, h_row in holdings_df.iterrows():
+                inst_id = h_row['instrument_id']
+                if inst_currency_map.get(inst_id) != currency:
+                    continue
+                if inst_id not in instrument_state:
+                    continue
+
+                ist = instrument_state[inst_id]
+                if ist['qty'] <= 0 or ist['foreign_cost'] <= 0:
+                    continue
+
+                # Get current market value in foreign currency
+                price_info = prices.get(inst_id)
+                if price_info:
+                    current_price, _ = price_info
+                    current_foreign_value = h_row['quantity'] * current_price
+                    avg_purchase_rate = ist['local_cost'] / ist['foreign_cost']
+
+                    # Unrealized FX P&L = current_foreign_value × (current_rate - avg_purchase_rate)
+                    unrealized_securities_pl += current_foreign_value * (current_rate - avg_purchase_rate)
+
+        # Unrealized cash P&L
+        unrealized_cash_pl = 0.0
+        if cs['cash_holdings'] > 1.0 and cs['cash_cost'] > 0:
+            current_value = cs['cash_holdings'] * current_rate
+            unrealized_cash_pl = current_value - cs['cash_cost']
+
+        results.append({
+            'currency': currency,
+            'cash_holdings': cs['cash_holdings'],
+            'realized_cash_pl': cs['cash_realized_pl'],
+            'unrealized_cash_pl': unrealized_cash_pl,
+            'realized_securities_pl': realized_securities_pl,
+            'unrealized_securities_pl': unrealized_securities_pl,
+            'total_realized_pl': cs['cash_realized_pl'] + realized_securities_pl,
+            'total_unrealized_pl': unrealized_cash_pl + unrealized_securities_pl
+        })
+
+    return pd.DataFrame(results)
+
 
 def get_realized_performance():
     """
