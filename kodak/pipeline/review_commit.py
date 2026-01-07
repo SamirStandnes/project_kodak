@@ -1,9 +1,42 @@
 import logging
+import os
 import pandas as pd
 from kodak.shared.db import get_connection, execute_non_query, execute_scalar, execute_query, create_backup
 from kodak.shared.utils import load_config
 
 logger = logging.getLogger(__name__)
+
+ACCOUNTS_MAP_PATH = os.path.join('data', 'reference', 'accounts_map.csv')
+
+
+def _append_placeholder_accounts(unknown_accs):
+    """Append placeholder rows to accounts_map.csv for new accounts."""
+    if not os.path.exists(ACCOUNTS_MAP_PATH):
+        logger.warning(f"Accounts map not found at {ACCOUNTS_MAP_PATH}")
+        return
+
+    try:
+        existing_df = pd.read_csv(ACCOUNTS_MAP_PATH)
+        existing_ids = set(existing_df['external_id'].astype(str))
+
+        new_rows = []
+        for acc_ext in unknown_accs:
+            if str(acc_ext) not in existing_ids:
+                new_rows.append({
+                    'external_id': acc_ext,
+                    'name': f'New Account {acc_ext}',
+                    'broker': 'UNKNOWN',
+                    'type': 'UNKNOWN'
+                })
+
+        if new_rows:
+            new_df = pd.DataFrame(new_rows)
+            combined = pd.concat([existing_df, new_df], ignore_index=True)
+            combined.to_csv(ACCOUNTS_MAP_PATH, index=False)
+            print(f"[+] Added {len(new_rows)} placeholder(s) to accounts_map.csv - please edit UNKNOWN values.")
+    except Exception as e:
+        logger.warning(f"Could not update accounts_map.csv: {e}")
+
 
 def review_and_commit():
     conn = get_connection()
@@ -25,9 +58,17 @@ def review_and_commit():
         return
 
     print(f"\n--- REVIEW STAGING ({len(df)} transactions) ---")
-    print(df[['date', 'type', 'symbol', 'amount', 'currency']].head(10).to_string())
-    if len(df) > 10:
-        print(f"... and {len(df)-10} more.")
+
+    # Sort by date and show more useful columns
+    display_df = df.sort_values('date').copy()
+    display_cols = ['date', 'type', 'symbol', 'quantity', 'price', 'amount_local', 'fee_local']
+    display_cols = [c for c in display_cols if c in display_df.columns]
+
+    # Format numeric columns for readability
+    pd.set_option('display.float_format', lambda x: f'{x:,.2f}' if abs(x) >= 0.01 else f'{x:.4f}')
+    print(display_df[display_cols].head(15).to_string(index=False))
+    if len(df) > 15:
+        print(f"... and {len(df)-15} more.")
 
     # Check for New Accounts/Instruments
     staged_accs = df['account_external_id'].unique()
@@ -52,6 +93,7 @@ def review_and_commit():
         print(f"\n[!] WARNING: {len(unknown_accs)} New Accounts detected:")
         print(unknown_accs)
         print("They will be auto-created with default settings.")
+        _append_placeholder_accounts(unknown_accs)
 
     if unknown_insts:
         print(f"\n[!] NOTICE: {len(unknown_insts)} New Instruments detected.")

@@ -403,13 +403,96 @@ def get_holdings(date: Optional[str] = None) -> pd.DataFrame:
 
 def get_income_and_costs() -> Dict[str, float]:
     row = execute_query('''
-        SELECT 
+        SELECT
             SUM(CASE WHEN type = 'DIVIDEND' THEN amount_local ELSE 0 END) as dividends,
             SUM(CASE WHEN type = 'INTEREST' THEN ABS(amount_local) ELSE 0 END) as interest,
             SUM(CASE WHEN type = 'FEE' THEN ABS(amount_local) ELSE fee_local END) as fees
         FROM transactions
     ''')[0]
     return {'dividends': row['dividends'] or 0, 'interest': row['interest'] or 0, 'fees': row['fees'] or 0}
+
+
+def get_fee_analysis() -> pd.DataFrame:
+    """
+    Analyzes trading fees by broker.
+
+    Returns DataFrame with columns:
+        - broker: Broker name
+        - total_traded: Total traded volume (abs value of BUY + SELL) in base currency
+        - total_fees: Total fees paid in base currency
+        - fee_per_100: Fee cost per 100 base currency traded
+        - num_trades: Number of BUY/SELL transactions
+    """
+    query = """
+        SELECT
+            a.broker,
+            ABS(t.amount_local) as traded_amount,
+            COALESCE(t.fee_local, 0) as fee
+        FROM transactions t
+        JOIN accounts a ON t.account_id = a.id
+        WHERE t.type IN ('BUY', 'SELL')
+    """
+    with get_db_connection() as conn:
+        df = pd.read_sql_query(query, conn)
+
+    if df.empty:
+        return pd.DataFrame(columns=['broker', 'total_traded', 'total_fees', 'fee_per_100', 'num_trades'])
+
+    result = df.groupby('broker').agg(
+        total_traded=('traded_amount', 'sum'),
+        total_fees=('fee', 'sum'),
+        num_trades=('traded_amount', 'count')
+    ).reset_index()
+
+    result['fee_per_100'] = (result['total_fees'] / result['total_traded'] * 100).round(4)
+    result = result.sort_values('fee_per_100')
+
+    return result[['broker', 'total_traded', 'total_fees', 'fee_per_100', 'num_trades']]
+
+
+def get_platform_fees() -> pd.DataFrame:
+    """
+    Analyzes platform/custody fees by broker (non-trading fees).
+
+    Returns DataFrame with columns:
+        - broker: Broker name
+        - total_fees: Total platform fees in base currency
+        - monthly_avg: Average monthly fee
+        - num_charges: Number of fee transactions
+    """
+    query = """
+        SELECT
+            a.broker,
+            ABS(t.amount_local) as fee_amount,
+            t.date
+        FROM transactions t
+        JOIN accounts a ON t.account_id = a.id
+        WHERE t.type = 'FEE'
+    """
+    with get_db_connection() as conn:
+        df = pd.read_sql_query(query, conn)
+
+    if df.empty:
+        return pd.DataFrame(columns=['broker', 'total_fees', 'monthly_avg', 'num_charges'])
+
+    # Calculate months span for average
+    df['date'] = pd.to_datetime(df['date'], format='mixed')
+
+    result = df.groupby('broker').agg(
+        total_fees=('fee_amount', 'sum'),
+        num_charges=('fee_amount', 'count'),
+        first_date=('date', 'min'),
+        last_date=('date', 'max')
+    ).reset_index()
+
+    # Calculate monthly average
+    result['months'] = ((result['last_date'] - result['first_date']).dt.days / 30.44).clip(lower=1)
+    result['monthly_avg'] = (result['total_fees'] / result['months']).round(2)
+
+    result = result.sort_values('monthly_avg', ascending=False)
+
+    return result[['broker', 'total_fees', 'monthly_avg', 'num_charges']]
+
 
 def get_total_xirr() -> float:
     with get_db_connection() as conn:

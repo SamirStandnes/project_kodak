@@ -7,7 +7,7 @@ if root_path not in sys.path:
 
 import streamlit as st
 import pandas as pd
-from kodak.shared.calculations import get_fee_details
+from kodak.shared.calculations import get_fee_details, get_fee_analysis, get_platform_fees
 from kodak.shared.utils import load_config, format_local
 
 # --- CONFIGURATION ---
@@ -58,3 +58,56 @@ st.dataframe(
     use_container_width=True,
     hide_index=True
 )
+
+st.divider()
+st.subheader("Fee Efficiency by Broker")
+st.caption(f"Cost per 100 {BASE_CURRENCY} traded (lower is better)")
+
+df_broker = get_fee_analysis()
+if not df_broker.empty:
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.dataframe(
+            df_broker,
+            column_config={
+                "broker": st.column_config.TextColumn("Broker"),
+                "total_traded": st.column_config.NumberColumn(f"Total Traded ({BASE_CURRENCY})", format="localized"),
+                "total_fees": st.column_config.NumberColumn(f"Total Fees ({BASE_CURRENCY})", format="localized"),
+                "fee_per_100": st.column_config.NumberColumn(f"Fee per 100 {BASE_CURRENCY}", format="%.4f"),
+                "num_trades": st.column_config.NumberColumn("# Trades"),
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with col2:
+        st.bar_chart(df_broker.set_index('broker')['fee_per_100'], color="#e74c3c")
+else:
+    st.info("No trading data available for fee analysis.")
+
+st.divider()
+st.subheader("Platform & Custody Fees by Broker")
+st.caption("Monthly subscription/custody fees (not per-trade)")
+
+df_platform = get_platform_fees()
+if not df_platform.empty:
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.dataframe(
+            df_platform,
+            column_config={
+                "broker": st.column_config.TextColumn("Broker"),
+                "total_fees": st.column_config.NumberColumn(f"Total Fees ({BASE_CURRENCY})", format="localized"),
+                "monthly_avg": st.column_config.NumberColumn(f"Avg Monthly ({BASE_CURRENCY})", format="%.2f"),
+                "num_charges": st.column_config.NumberColumn("# Charges"),
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with col2:
+        st.bar_chart(df_platform.set_index('broker')['monthly_avg'], color="#9b59b6")
+else:
+    st.info("No platform fee data available.")
