@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
 
 from kodak.shared.db import get_connection, get_db_connection, execute_query
-from kodak.shared.market_data import get_historical_prices_by_date
+from kodak.shared.market_data import get_historical_prices_by_date, get_forward_dividends, get_exchange_rate
 from kodak.shared.utils import load_config
 
 # --- Configuration ---
@@ -215,7 +215,14 @@ def get_yearly_contribution(target_year: str) -> Tuple[pd.DataFrame, float, List
             h = holdings[sym]
             
             if t_type in ['BUY', 'SELL', 'INNLØSN. UTTAK VP', 'TILDELING INNLEGG RE', 'BYTTE INNLEGG VP', 'BYTTE UTTAK VP', 'TRANSFER_IN', 'TRANSFER_OUT', 'EMISJON INNLEGG VP']:
-                if t_type in INFLOW_TYPES: h['qty'] += qty; h['cost'] += abs(amt)
+                # Special Split Handling
+                if t_type == 'BYTTE UTTAK VP':
+                    h['qty'] += qty # negative
+                    # Do NOT reduce cost
+                elif t_type == 'BYTTE INNLEGG VP':
+                    h['qty'] += qty
+                    h['cost'] += abs(amt)
+                elif t_type in INFLOW_TYPES: h['qty'] += qty; h['cost'] += abs(amt)
                 elif t_type in OUTFLOW_TYPES:
                     if h['qty'] > 0: h['cost'] -= (h['cost'] / h['qty']) * abs(qty)
                     h['qty'] += qty
@@ -341,7 +348,13 @@ def get_yearly_equity_curve() -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
             if sym:
                 if sym not in holdings: holdings[sym] = {'qty': 0.0, 'cost': 0.0, 'curr': row['currency']}
                 h = holdings[sym]
-                if t_type in INFLOW_TYPES: h['qty'] += qty; h['cost'] += abs(amt)
+                # Split Handling
+                if t_type == 'BYTTE UTTAK VP':
+                    h['qty'] += qty
+                elif t_type == 'BYTTE INNLEGG VP':
+                    h['qty'] += qty
+                    h['cost'] += abs(amt)
+                elif t_type in INFLOW_TYPES: h['qty'] += qty; h['cost'] += abs(amt)
                 elif t_type in OUTFLOW_TYPES:
                     if h['qty'] > 0: h['cost'] -= (h['cost'] / h['qty']) * abs(qty)
                     h['qty'] += qty
@@ -394,8 +407,21 @@ def get_holdings(date: Optional[str] = None) -> pd.DataFrame:
     for inst_id, group in df.groupby('instrument_id'):
         total_qty = 0.0; total_cost = 0.0; first_row = group.iloc[0]
         for _, row in group.iterrows():
-            if any(t in row['type'] for t in INFLOW_TYPES): total_qty += row['quantity']; total_cost += abs(row['amount_local'])
-            elif any(t in row['type'] for t in OUTFLOW_TYPES):
+            t_type = row['type']
+            
+            # Special handling for Internal Splits/Exchanges (Same Instrument)
+            # We preserve the cost basis on withdrawal and carry it over to the new shares.
+            if t_type == 'BYTTE UTTAK VP':
+                total_qty += row['quantity'] # quantity is negative
+                continue
+            
+            if t_type == 'BYTTE INNLEGG VP':
+                total_qty += row['quantity']
+                total_cost += abs(row['amount_local']) # Should be 0, but add just in case
+                continue
+
+            if any(t in t_type for t in INFLOW_TYPES): total_qty += row['quantity']; total_cost += abs(row['amount_local'])
+            elif any(t in t_type for t in OUTFLOW_TYPES):
                 if total_qty > 0: total_cost -= (total_cost / total_qty) * abs(row['quantity'])
                 total_qty += row['quantity']
         if abs(total_qty) > 0.001: final_holdings.append({'instrument_id': inst_id, 'symbol': first_row['symbol'], 'isin': first_row['isin'], 'quantity': total_qty, 'cost_basis_local': max(0, total_cost)})
@@ -563,6 +589,132 @@ def get_dividend_details():
         """, conn)
 
     return df_yearly, df_current_year, df_all_time
+
+
+def get_dividend_forecast() -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Estimates annual dividend income using a hybrid approach:
+    1. Primary: Yahoo Finance forward dividend rate (indicated annual dividend)
+    2. Fallback: Trailing 12-month (TTM) dividends from transaction history
+
+    Returns:
+        Tuple of (details_df, summary_dict)
+
+        details_df columns:
+            - symbol: Stock symbol
+            - quantity: Current shares held
+            - source: 'yahoo' or 'ttm' (data source)
+            - dividend_per_share: Annual dividend per share (in asset currency)
+            - currency: Asset currency
+            - annual_estimate: Estimated annual dividend (in asset currency)
+            - annual_estimate_local: Estimated annual dividend (in base currency)
+
+        summary_dict:
+            - total_estimate_local: Total estimated annual dividends in base currency
+            - yahoo_count: Number of holdings using Yahoo data
+            - ttm_count: Number of holdings using TTM fallback
+            - no_data_count: Number of holdings with no dividend data
+    """
+    holdings = get_holdings()
+    if holdings.empty:
+        return pd.DataFrame(), {'total_estimate_local': 0, 'yahoo_count': 0, 'ttm_count': 0, 'no_data_count': 0}
+
+    # Get symbols for Yahoo lookup
+    symbols = holdings['symbol'].dropna().tolist()
+
+    # Fetch forward dividends from Yahoo Finance
+    yahoo_dividends = get_forward_dividends(symbols)
+
+    # Get TTM dividends from transaction history as fallback
+    with get_db_connection() as conn:
+        ttm_df = pd.read_sql_query("""
+            SELECT
+                i.symbol,
+                i.currency,
+                SUM(t.amount) as ttm_total,
+                COUNT(*) as num_payments
+            FROM transactions t
+            LEFT JOIN instruments i ON t.instrument_id = i.id
+            WHERE t.type = 'DIVIDEND'
+            AND t.date >= date('now', '-12 months')
+            GROUP BY t.instrument_id
+        """, conn)
+
+    ttm_by_symbol = {row['symbol']: row for _, row in ttm_df.iterrows()}
+
+    # Get instrument currencies from DB
+    with get_db_connection() as conn:
+        currencies_df = pd.read_sql_query(
+            "SELECT symbol, currency FROM instruments WHERE symbol IS NOT NULL", conn)
+    currency_map = dict(zip(currencies_df['symbol'], currencies_df['currency']))
+
+    results = []
+    yahoo_count = 0
+    ttm_count = 0
+    no_data_count = 0
+
+    for _, row in holdings.iterrows():
+        symbol = row['symbol']
+        quantity = row['quantity']
+
+        if not symbol or pd.isna(symbol):
+            no_data_count += 1
+            continue
+
+        # Try Yahoo Finance first
+        if symbol in yahoo_dividends:
+            yf_data = yahoo_dividends[symbol]
+            div_per_share = yf_data['dividend_rate']
+            currency = yf_data['currency'] or currency_map.get(symbol, 'USD')
+            annual_estimate = div_per_share * quantity
+            source = 'yahoo'
+            yahoo_count += 1
+
+        # Fall back to TTM
+        elif symbol in ttm_by_symbol:
+            ttm_data = ttm_by_symbol[symbol]
+            # Get holdings at time of dividends to calculate per-share
+            # For simplicity, use total TTM as the estimate (assumes same position size)
+            annual_estimate = ttm_data['ttm_total']
+            currency = ttm_data['currency'] or currency_map.get(symbol, BASE_CURRENCY)
+            div_per_share = annual_estimate / quantity if quantity > 0 else 0
+            source = 'ttm'
+            ttm_count += 1
+
+        else:
+            # No dividend data available
+            no_data_count += 1
+            continue
+
+        # Convert to local currency
+        fx_rate = get_exchange_rate(currency, BASE_CURRENCY) if currency != BASE_CURRENCY else 1.0
+        annual_estimate_local = annual_estimate * fx_rate
+
+        results.append({
+            'symbol': symbol,
+            'quantity': quantity,
+            'source': source,
+            'dividend_per_share': round(div_per_share, 4),
+            'currency': currency,
+            'annual_estimate': round(annual_estimate, 2),
+            'annual_estimate_local': round(annual_estimate_local, 2)
+        })
+
+    df = pd.DataFrame(results)
+    if not df.empty:
+        df = df.sort_values('annual_estimate_local', ascending=False)
+
+    total_local = df['annual_estimate_local'].sum() if not df.empty else 0
+
+    summary = {
+        'total_estimate_local': round(total_local, 2),
+        'yahoo_count': yahoo_count,
+        'ttm_count': ttm_count,
+        'no_data_count': no_data_count
+    }
+
+    return df, summary
+
 
 def get_interest_details():
     """
@@ -1010,8 +1162,20 @@ def get_realized_performance():
 
             # Identify Buy vs Sell using logic similar to get_holdings
             
+            # Special handling for Splits (BYTTE)
+            if t_type == 'BYTTE UTTAK VP':
+                # Remove Quantity, KEEP Cost (deferred to new shares)
+                h['qty'] += qty # negative
+                continue
+            
+            if t_type == 'BYTTE INNLEGG VP':
+                # Add Quantity, Add any extra cost (usually 0)
+                h['qty'] += qty
+                h['cost'] += abs(amt)
+                continue
+
             # INFLOW (Buy)
-            if t_type in ['BUY', 'DEPOSIT', 'TRANSFER_IN', 'TILDELING INNLEGG RE', 'BYTTE INNLEGG VP', 'EMISJON INNLEGG VP']:
+            if t_type in ['BUY', 'DEPOSIT', 'TRANSFER_IN', 'TILDELING INNLEGG RE', 'EMISJON INNLEGG VP']:
                 # Add to inventory
                 h['qty'] += qty
                 # Cost increases by amount paid (usually negative amount, so we take abs)
@@ -1019,7 +1183,7 @@ def get_realized_performance():
                 h['cost'] += cost_added
 
             # OUTFLOW (Sell)
-            elif t_type in ['SELL', 'WITHDRAWAL', 'TRANSFER_OUT', 'INNLØSN. UTTAK VP', 'BYTTE UTTAK VP']:
+            elif t_type in ['SELL', 'WITHDRAWAL', 'TRANSFER_OUT', 'INNLØSN. UTTAK VP']:
                 # Calculate Realized Gain
                 # Avg Cost Basis
                 if h['qty'] > 0:

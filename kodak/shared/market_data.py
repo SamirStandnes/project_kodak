@@ -190,3 +190,46 @@ def get_split_history(symbols: List[str]) -> Dict[str, pd.Series]:
             logger.debug(f"Could not fetch split history for {sym}: {e}")
 
     return results
+
+
+def get_forward_dividends(symbols: List[str]) -> Dict[str, Dict]:
+    """
+    Fetches forward (indicated) annual dividend info from Yahoo Finance.
+
+    Returns {symbol: {'dividend_rate': float, 'dividend_yield': float, 'currency': str}}
+    - dividend_rate: Annual dividend per share
+    - dividend_yield: Dividend yield as decimal (e.g., 0.025 for 2.5%)
+    - currency: Currency of the dividend
+
+    Returns empty dict for symbols where data is unavailable.
+    """
+    if not symbols:
+        return {}
+
+    logger.info(f"Fetching forward dividend data for {len(symbols)} symbols...")
+    results = {}
+
+    for sym in symbols:
+        try:
+            ticker = yf.Ticker(sym)
+            info = ticker.info
+
+            dividend_rate = info.get('dividendRate')
+            dividend_yield = info.get('dividendYield')
+            currency = info.get('currency')
+
+            # Only include if we have a valid dividend rate
+            if dividend_rate and dividend_rate > 0:
+                results[sym] = {
+                    'dividend_rate': float(dividend_rate),
+                    'dividend_yield': float(dividend_yield) if dividend_yield else None,
+                    'currency': currency
+                }
+                logger.debug(f"{sym}: Forward dividend = {dividend_rate} {currency}")
+            else:
+                logger.debug(f"{sym}: No forward dividend data available")
+
+        except Exception as e:
+            logger.debug(f"Could not fetch dividend info for {sym}: {e}")
+
+    return results
