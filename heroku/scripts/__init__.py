@@ -1,0 +1,3 @@
+"""
+Heroku scripts package.
+"""

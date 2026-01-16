@@ -1,0 +1,18 @@
+# Core dependencies
+pandas
+numpy
+PyYAML
+
+# Data fetching
+yfinance
+
+# Dashboard
+streamlit
+plotly
+
+# PostgreSQL
+psycopg2-binary
+
+# CLI formatting (used by some shared modules)
+rich
+tabulate

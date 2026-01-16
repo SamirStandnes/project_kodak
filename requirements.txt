@@ -15,6 +15,9 @@ plotly
 rich
 tabulate
 
+# PostgreSQL (for Heroku deployment)
+psycopg2-binary
+
 # Testing (development)
 pytest
 pytest-cov
