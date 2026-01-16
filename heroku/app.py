@@ -249,7 +249,7 @@ if check_password():
                 inst_id = row['instrument_id']
                 mkt = price_map.get(inst_id)
 
-                if not mkt:
+                if mkt is None:
                     continue
 
                 price = mkt['close']

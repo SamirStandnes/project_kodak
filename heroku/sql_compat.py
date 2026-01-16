@@ -50,6 +50,14 @@ def translate_query(query: str) -> str:
         result
     )
 
+    # Fix date comparisons: column >= CURRENT_DATE needs column cast to date
+    # Pattern: t.date >= CURRENT_DATE or similar
+    result = re.sub(
+        r'(\w+\.date)\s*(>=|<=|>|<|=)\s*(CURRENT_DATE)',
+        r'\1::date \2 \3',
+        result
+    )
+
     # Handle date LIKE patterns for year matching
     # t.date LIKE ? (where ? is 'YYYY%') -> TO_CHAR(t.date::date, 'YYYY') = %s
     # This is tricky because we need to change the parameter too
