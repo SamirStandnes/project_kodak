@@ -1,8 +1,8 @@
 """
 Heroku Streamlit Dashboard - Main Entry Point
 
-This is the cloud-ready version of the Kodak portfolio dashboard.
-It uses PostgreSQL instead of SQLite and includes password protection.
+Cloud-ready version of the Kodak portfolio dashboard.
+Uses PostgreSQL and includes password protection.
 """
 import streamlit as st
 import os
@@ -12,62 +12,44 @@ def check_password():
     """Returns True if the user has entered the correct password."""
 
     def password_entered():
-        """Checks whether the password entered by the user is correct."""
         if st.session_state.get("password") == os.environ.get("DASHBOARD_PASSWORD", ""):
             st.session_state["password_correct"] = True
             del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
-    # First run or password not yet checked
     if "password_correct" not in st.session_state:
-        st.set_page_config(
-            page_title="Kodak Portfolio",
-            page_icon="🔒",
-            layout="centered"
-        )
+        st.set_page_config(page_title="Kodak Portfolio", page_icon="🔒", layout="centered")
         st.title("🔒 Kodak Portfolio")
-        st.text_input(
-            "Enter password to access the dashboard:",
-            type="password",
-            on_change=password_entered,
-            key="password"
-        )
-        st.info("This is a private portfolio dashboard.")
+        st.text_input("Enter password:", type="password", on_change=password_entered, key="password")
         return False
-
-    # Password was entered but is incorrect
     elif not st.session_state["password_correct"]:
-        st.set_page_config(
-            page_title="Kodak Portfolio",
-            page_icon="🔒",
-            layout="centered"
-        )
+        st.set_page_config(page_title="Kodak Portfolio", page_icon="🔒", layout="centered")
         st.title("🔒 Kodak Portfolio")
-        st.text_input(
-            "Enter password to access the dashboard:",
-            type="password",
-            on_change=password_entered,
-            key="password"
-        )
-        st.error("😕 Incorrect password. Please try again.")
+        st.text_input("Enter password:", type="password", on_change=password_entered, key="password")
+        st.error("Incorrect password")
         return False
-
-    # Password is correct
     return True
 
 
 # --- MAIN APPLICATION ---
 if check_password():
-    # Initialize adapters BEFORE importing any kodak modules
-    import heroku.setup_adapters  # noqa: F401 - Side effect import
+    # Initialize adapters BEFORE importing kodak modules
+    import heroku.setup_adapters  # noqa: F401
 
-    # Now import the dashboard modules
     import pandas as pd
     import plotly.express as px
+    import plotly.graph_objects as go
 
-    from kodak.shared.db import get_db_connection, execute_query
-    from kodak.shared.calculations import get_holdings, get_income_and_costs
+    from kodak.shared.db import get_db_connection
+    from kodak.shared.calculations import (
+        get_holdings, get_income_and_costs,
+        get_dividend_details, get_dividend_forecast,
+        get_interest_details,
+        get_fee_details, get_fee_analysis, get_platform_fees,
+        get_fx_performance_detailed,
+        get_total_xirr, get_yearly_equity_curve, get_yearly_contribution
+    )
     from kodak.shared.market_data import get_exchange_rate
     from kodak.shared.utils import load_config, format_local
 
@@ -81,9 +63,9 @@ if check_password():
         layout="wide"
     )
 
-    # Sidebar with logout option
+    # --- SIDEBAR NAVIGATION ---
     with st.sidebar:
-        st.title("Kodak Portfolio")
+        st.title("📊 Kodak Portfolio")
         st.caption(f"Base Currency: {BASE_CURRENCY}")
 
         if st.button("🔒 Logout"):
@@ -92,15 +74,25 @@ if check_password():
 
         st.divider()
 
-        # Navigation
         page = st.radio(
-            "Navigate to:",
-            ["Overview", "Holdings", "Dividends", "Interest", "Fees", "Activity", "FX Analysis", "Performance"],
+            "Navigation",
+            [
+                "📈 Overview",
+                "🏦 Holdings",
+                "💰 Dividends",
+                "💳 Interest",
+                "💸 Fees",
+                "📝 Activity",
+                "💱 FX Analysis",
+                "📊 Performance"
+            ],
             label_visibility="collapsed"
         )
 
-    # --- PAGE: OVERVIEW ---
-    if page == "Overview":
+    # ========================================
+    # PAGE: OVERVIEW
+    # ========================================
+    if page == "📈 Overview":
         st.title("Portfolio Overview")
 
         @st.cache_data(ttl=300)
@@ -124,7 +116,13 @@ if check_password():
                     )
                 ''', conn)
 
-            price_map = {row['instrument_id']: {'price': row['close'], 'currency': row['currency']} for _, row in prices.iterrows()}
+                cash_rows = pd.read_sql_query(
+                    "SELECT currency, SUM(amount) as total FROM transactions GROUP BY currency",
+                    conn
+                )
+
+            price_map = {row['instrument_id']: {'price': row['close'], 'currency': row['currency']}
+                        for _, row in prices.iterrows()}
             meta_map = instruments.set_index('id').to_dict('index')
 
             total_market_value = 0
@@ -159,9 +157,6 @@ if check_password():
                         'Asset Class': meta.get('asset_class') or 'Equity'
                     })
 
-            with get_db_connection() as conn:
-                cash_rows = pd.read_sql_query("SELECT currency, SUM(amount) as total FROM transactions GROUP BY currency", conn)
-
             total_cash_base = 0
             for _, row in cash_rows.iterrows():
                 curr = row['currency']
@@ -187,7 +182,6 @@ if check_password():
 
         data = load_summary_data()
 
-        # Net Wealth Overview
         st.subheader("Net Equity Overview")
         col1, col2, col3 = st.columns(3)
 
@@ -197,51 +191,46 @@ if check_password():
 
         col1.metric("Total Net Equity", format_local(net_worth))
         col2.metric("Stock Holdings", format_local(data['market_value']))
-        col3.metric("Cash & Margin", format_local(data['cash']), help="Negative value indicates margin usage.")
+        col3.metric("Cash & Margin", format_local(data['cash']))
 
-        # Performance & Growth
         st.subheader("Performance & Growth")
         col4, col5, col6 = st.columns(3)
+        col4.metric("Unrealized Gain/Loss", format_local(total_gain), f"{format_local(total_return_pct, 2)}%")
+        col5.metric("Invested Capital", format_local(data['cost_basis']))
 
-        col4.metric("Unrealized Gain/Loss", format_local(total_gain), f"{format_local(total_return_pct, 2)}%", delta_color="normal")
-        col5.metric("Invested Capital (Cost Basis)", format_local(data['cost_basis']))
-
-        # Income & Costs
         st.subheader("Cash Flow (All Time)")
         col6, col7, col8 = st.columns(3)
-
-        col6.metric("Total Dividends", format_local(data['dividends']), delta_color="normal")
-        col7.metric("Total Interest Paid", format_local(data['interest']), delta_color="inverse")
-        col8.metric("Total Fees Paid", format_local(data['fees']), delta_color="inverse")
+        col6.metric("Total Dividends", format_local(data['dividends']))
+        col7.metric("Total Interest", format_local(data['interest']))
+        col8.metric("Total Fees", format_local(data['fees']))
 
         st.divider()
 
-        # Allocation Charts
         st.subheader("Portfolio Allocation")
-        acol1, acol2 = st.columns(2)
-
         df_alloc = data['allocation']
         if not df_alloc.empty:
+            acol1, acol2 = st.columns(2)
             with acol1:
                 fig_sector = px.pie(df_alloc, values='Market Value', names='Sector', title='By Sector')
                 st.plotly_chart(fig_sector, use_container_width=True)
             with acol2:
                 fig_region = px.pie(df_alloc, values='Market Value', names='Region', title='By Region')
                 st.plotly_chart(fig_region, use_container_width=True)
-        else:
-            st.info("No allocation data available.")
 
-    # --- PAGE: HOLDINGS ---
-    elif page == "Holdings":
+    # ========================================
+    # PAGE: HOLDINGS
+    # ========================================
+    elif page == "🏦 Holdings":
         st.title("Current Holdings")
 
         @st.cache_data(ttl=300)
         def load_holdings_data():
-            df = get_holdings()
-
             with get_db_connection() as conn:
+                df_holdings = get_holdings()
+
                 prices = pd.read_sql_query('''
-                    SELECT mp.instrument_id, mp.close, mp.date, i.currency, i.symbol, i.name
+                    SELECT mp.instrument_id, mp.close, i.currency, i.symbol, i.name,
+                           i.sector, i.region, i.country, i.asset_class
                     FROM market_prices mp
                     JOIN instruments i ON mp.instrument_id = i.id
                     WHERE (mp.instrument_id, mp.date) IN (
@@ -252,178 +241,351 @@ if check_password():
                 ''', conn)
 
             price_map = {row['instrument_id']: row for _, row in prices.iterrows()}
-
             fx_cache = {}
-            rows = []
+            data = []
+            total_val = 0
 
-            for _, row in df.iterrows():
+            for _, row in df_holdings.iterrows():
                 inst_id = row['instrument_id']
                 mkt = price_map.get(inst_id)
 
-                if mkt is not None:
-                    curr = mkt['currency']
-                    price = mkt['close']
+                if not mkt:
+                    continue
 
-                    if curr == BASE_CURRENCY:
-                        rate = 1.0
-                    else:
-                        if curr not in fx_cache:
-                            fx_cache[curr] = get_exchange_rate(curr, BASE_CURRENCY)
-                        rate = fx_cache[curr]
+                price = mkt['close']
+                curr = mkt['currency']
 
-                    market_value = row['quantity'] * price * rate
-                    gain = market_value - row['cost_basis_local']
-                    gain_pct = (gain / row['cost_basis_local'] * 100) if row['cost_basis_local'] > 0 else 0
+                if curr == BASE_CURRENCY:
+                    rate = 1.0
+                else:
+                    if curr not in fx_cache:
+                        fx_cache[curr] = get_exchange_rate(curr, BASE_CURRENCY)
+                    rate = fx_cache[curr]
 
-                    rows.append({
-                        'Symbol': mkt['symbol'] or f"ID:{inst_id}",
-                        'Name': mkt['name'] or '',
-                        'Quantity': row['quantity'],
-                        'Price': price,
-                        'Currency': curr,
-                        'Market Value': market_value,
-                        'Cost Basis': row['cost_basis_local'],
-                        'Gain/Loss': gain,
-                        'Gain %': gain_pct
-                    })
+                market_val = row['quantity'] * price * rate
+                cost_basis = row['cost_basis_local']
+                gain = market_val - cost_basis
+                ret_pct = (market_val / cost_basis - 1) * 100 if cost_basis > 0 else 0
 
-            return pd.DataFrame(rows)
+                total_val += market_val
 
-        df_holdings = load_holdings_data()
+                data.append({
+                    "Symbol": row['symbol'],
+                    "Quantity": round(row['quantity'], 0),
+                    "Sector": mkt['sector'],
+                    "Region": mkt['region'],
+                    "Country": mkt['country'],
+                    "Type": mkt['asset_class'],
+                    "Market Value": round(market_val, 0),
+                    "Gain/Loss": round(gain, 0),
+                    "Return %": ret_pct
+                })
 
-        if not df_holdings.empty:
+            df = pd.DataFrame(data)
+            if not df.empty:
+                df['Weight %'] = (df['Market Value'] / total_val) * 100
+                df = df.sort_values('Market Value', ascending=False)
+
+            return df
+
+        df = load_holdings_data()
+
+        st.metric("Total Equity Value", format_local(df['Market Value'].sum()) if not df.empty else "0")
+
+        if not df.empty:
             st.dataframe(
-                df_holdings.style.format({
-                    'Quantity': '{:,.2f}',
-                    'Price': '{:,.2f}',
-                    'Market Value': '{:,.0f}',
-                    'Cost Basis': '{:,.0f}',
-                    'Gain/Loss': '{:,.0f}',
-                    'Gain %': '{:+.1f}%'
-                }),
-                use_container_width=True
+                df,
+                column_config={
+                    "Quantity": st.column_config.NumberColumn(format="localized"),
+                    "Market Value": st.column_config.NumberColumn(f"Market Value ({BASE_CURRENCY})", format="localized"),
+                    "Gain/Loss": st.column_config.NumberColumn(f"Gain/Loss ({BASE_CURRENCY})", format="localized"),
+                    "Return %": st.column_config.NumberColumn(format="%.1f%%"),
+                    "Weight %": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
+                },
+                use_container_width=True,
+                hide_index=True,
+                height=600
             )
 
-            total_mv = df_holdings['Market Value'].sum()
-            total_cost = df_holdings['Cost Basis'].sum()
-            total_gain = df_holdings['Gain/Loss'].sum()
-
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total Market Value", format_local(total_mv))
-            col2.metric("Total Cost Basis", format_local(total_cost))
-            col3.metric("Total Gain/Loss", format_local(total_gain))
-        else:
-            st.info("No holdings found.")
-
-    # --- PAGE: DIVIDENDS ---
-    elif page == "Dividends":
-        st.title("Dividend Analysis")
-
-        from kodak.shared.calculations import get_dividend_details, get_dividend_forecast
+    # ========================================
+    # PAGE: DIVIDENDS
+    # ========================================
+    elif page == "💰 Dividends":
+        st.title("💰 Dividend Analysis")
 
         @st.cache_data(ttl=300)
         def load_dividend_data():
-            details = get_dividend_details()
-            forecast = get_dividend_forecast()
-            return details, forecast
+            return get_dividend_details()
 
-        details, forecast = load_dividend_data()
+        @st.cache_data(ttl=300)
+        def load_dividend_forecast():
+            return get_dividend_forecast()
 
-        if not details.empty:
-            st.subheader("Dividend History")
-            st.dataframe(details, use_container_width=True)
+        df_yearly, df_current_year, df_all_time = load_dividend_data()
 
-            total = details['amount_local'].sum() if 'amount_local' in details.columns else 0
-            st.metric("Total Dividends Received", format_local(total))
+        col1, col2 = st.columns([2, 1])
 
-        if not forecast.empty:
-            st.subheader("Dividend Forecast (Next 12 Months)")
-            st.dataframe(forecast, use_container_width=True)
+        with col1:
+            st.subheader("Dividends by Year")
+            if not df_yearly.empty:
+                st.bar_chart(df_yearly.set_index('year'), color="#2ecc71")
 
-    # --- PAGE: INTEREST ---
-    elif page == "Interest":
-        st.title("Interest Analysis")
+        with col2:
+            st.subheader("Top Payers (Current Year)")
+            if not df_current_year.empty:
+                st.dataframe(
+                    df_current_year,
+                    column_config={
+                        "symbol": st.column_config.TextColumn("Instrument"),
+                        "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="localized"),
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
 
-        from kodak.shared.calculations import get_interest_details
+        st.divider()
+        st.subheader("Top Payers (All Time)")
+        if not df_all_time.empty:
+            st.dataframe(
+                df_all_time.head(30),
+                column_config={
+                    "symbol": st.column_config.TextColumn("Instrument"),
+                    "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="localized"),
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+        st.divider()
+        st.subheader("Dividend Forecast")
+
+        with st.spinner("Fetching dividend forecast..."):
+            df_forecast, forecast_summary = load_dividend_forecast()
+
+        if not df_forecast.empty:
+            st.metric("Estimated Annual Dividends", f"{forecast_summary['total_estimate_local']:,.0f} {BASE_CURRENCY}")
+
+            st.dataframe(
+                df_forecast.sort_values('annual_estimate_local', ascending=False),
+                column_config={
+                    "symbol": st.column_config.TextColumn("Symbol"),
+                    "quantity": st.column_config.NumberColumn("Shares", format="%d"),
+                    "dividend_per_share": st.column_config.NumberColumn("Div/Share", format="%.2f"),
+                    "currency": st.column_config.TextColumn("Currency"),
+                    "annual_estimate": st.column_config.NumberColumn("Annual Est.", format="%d"),
+                    "annual_estimate_local": st.column_config.NumberColumn(f"Est. ({BASE_CURRENCY})", format="%d"),
+                    "source": st.column_config.TextColumn("Source"),
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("No dividend-paying holdings found.")
+
+    # ========================================
+    # PAGE: INTEREST
+    # ========================================
+    elif page == "💳 Interest":
+        st.title("🏦 Interest Analysis")
 
         @st.cache_data(ttl=300)
         def load_interest_data():
             return get_interest_details()
 
-        details = load_interest_data()
+        df_yearly, df_currency, df_top = load_interest_data()
 
-        if not details.empty:
-            st.dataframe(details, use_container_width=True)
-            total = details['amount_local'].sum() if 'amount_local' in details.columns else 0
-            st.metric("Total Interest Paid", format_local(total))
-        else:
-            st.info("No interest transactions found.")
+        total_interest = df_yearly['total'].sum() if not df_yearly.empty else 0
+        st.metric("Total Interest Paid (All Time)", format_local(total_interest))
 
-    # --- PAGE: FEES ---
-    elif page == "Fees":
-        st.title("Fee Analysis")
+        col1, col2 = st.columns(2)
 
-        from kodak.shared.calculations import get_fee_details, get_fee_analysis
+        with col1:
+            st.subheader("Interest by Year")
+            if not df_yearly.empty:
+                st.bar_chart(df_yearly.set_index('year'))
+
+        with col2:
+            st.subheader("Interest by Currency")
+            if not df_currency.empty:
+                st.dataframe(
+                    df_currency,
+                    column_config={
+                        "currency": st.column_config.TextColumn("Currency"),
+                        "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="localized"),
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        st.subheader("Recent Interest Payments")
+        if not df_top.empty:
+            st.dataframe(
+                df_top,
+                column_config={
+                    "date": st.column_config.DateColumn("Date"),
+                    "currency": st.column_config.TextColumn("Curr"),
+                    "amount": st.column_config.NumberColumn("Amount (Orig)", format="localized"),
+                    "amount_local": st.column_config.NumberColumn(f"Amount ({BASE_CURRENCY})", format="localized"),
+                    "source_file": st.column_config.TextColumn("Source"),
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+    # ========================================
+    # PAGE: FEES
+    # ========================================
+    elif page == "💸 Fees":
+        st.title("💸 Fee Analysis")
 
         @st.cache_data(ttl=300)
         def load_fee_data():
-            details = get_fee_details()
-            analysis = get_fee_analysis()
-            return details, analysis
+            return get_fee_details()
 
-        details, analysis = load_fee_data()
+        df_yearly, df_currency, df_top = load_fee_data()
 
-        if not analysis.empty:
-            st.subheader("Fee Summary by Type")
-            st.dataframe(analysis, use_container_width=True)
+        total_fees = df_yearly['total'].sum() if not df_yearly.empty else 0
+        st.metric("Total Fees Paid (All Time)", format_local(total_fees))
 
-        if not details.empty:
-            st.subheader("Fee Details")
-            st.dataframe(details, use_container_width=True)
+        col1, col2 = st.columns(2)
 
-            total = details['fee_local'].sum() if 'fee_local' in details.columns else 0
-            st.metric("Total Fees Paid", format_local(total))
+        with col1:
+            st.subheader("Fees by Year")
+            if not df_yearly.empty:
+                st.bar_chart(df_yearly.set_index('year'), color="#e67e22")
 
-    # --- PAGE: ACTIVITY ---
-    elif page == "Activity":
-        st.title("Transaction Activity")
+        with col2:
+            st.subheader("Fees by Currency")
+            if not df_currency.empty:
+                st.dataframe(
+                    df_currency,
+                    column_config={
+                        "currency": st.column_config.TextColumn("Currency"),
+                        "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="localized"),
+                    },
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        st.divider()
+        st.subheader("Recent Individual Fees")
+        if not df_top.empty:
+            st.dataframe(
+                df_top,
+                column_config={
+                    "date": st.column_config.DateColumn("Date"),
+                    "currency": st.column_config.TextColumn("Currency"),
+                    "amount_local": st.column_config.NumberColumn(f"Fee ({BASE_CURRENCY})", format="localized"),
+                    "source_file": st.column_config.TextColumn("Source"),
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+        st.divider()
+        st.subheader("Fee Efficiency by Broker")
+
+        df_broker = get_fee_analysis()
+        if not df_broker.empty:
+            st.dataframe(
+                df_broker,
+                column_config={
+                    "broker": st.column_config.TextColumn("Broker"),
+                    "total_traded": st.column_config.NumberColumn(f"Total Traded ({BASE_CURRENCY})", format="localized"),
+                    "total_fees": st.column_config.NumberColumn(f"Total Fees ({BASE_CURRENCY})", format="localized"),
+                    "fee_per_100": st.column_config.NumberColumn(f"Fee per 100 {BASE_CURRENCY}", format="%.4f"),
+                    "num_trades": st.column_config.NumberColumn("# Trades"),
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+        st.divider()
+        st.subheader("Platform & Custody Fees")
+
+        df_platform = get_platform_fees()
+        if not df_platform.empty:
+            st.dataframe(
+                df_platform,
+                column_config={
+                    "broker": st.column_config.TextColumn("Broker"),
+                    "total_fees": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="localized"),
+                    "monthly_avg": st.column_config.NumberColumn(f"Avg Monthly ({BASE_CURRENCY})", format="%.2f"),
+                    "num_charges": st.column_config.NumberColumn("# Charges"),
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+    # ========================================
+    # PAGE: ACTIVITY
+    # ========================================
+    elif page == "📝 Activity":
+        st.title("📝 Portfolio Activity")
+
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            show_all = st.checkbox("Show All Transactions")
+            num_txns = st.slider("Number of transactions", 10, 500, 50, disabled=show_all)
 
         @st.cache_data(ttl=300)
-        def load_activity_data():
+        def load_activity_data(limit, all_txns):
             with get_db_connection() as conn:
-                df = pd.read_sql_query('''
+                query = """
                     SELECT
                         t.date,
+                        a.name as account,
                         t.type,
-                        i.symbol,
-                        i.name,
+                        COALESCE(i.symbol, i.isin) as symbol,
                         t.quantity,
                         t.price,
                         t.amount,
                         t.currency,
                         t.amount_local,
-                        a.name as account
+                        t.batch_id,
+                        t.source_file,
+                        t.notes as description
                     FROM transactions t
+                    JOIN accounts a ON t.account_id = a.id
                     LEFT JOIN instruments i ON t.instrument_id = i.id
-                    LEFT JOIN accounts a ON t.account_id = a.id
-                    ORDER BY t.date DESC
-                    LIMIT 500
-                ''', conn)
+                    ORDER BY t.date DESC, t.id DESC
+                """
+                if not all_txns:
+                    query += f" LIMIT {limit}"
+
+                df = pd.read_sql_query(query, conn)
             return df
 
-        df = load_activity_data()
+        df = load_activity_data(num_txns, show_all)
 
-        if not df.empty:
-            st.dataframe(df, use_container_width=True)
-            st.caption(f"Showing last 500 transactions")
-        else:
-            st.info("No transactions found.")
+        st.metric("Transactions Displayed", len(df))
 
-    # --- PAGE: FX ANALYSIS ---
-    elif page == "FX Analysis":
-        st.title("Currency Exposure & FX Performance")
+        st.dataframe(
+            df,
+            column_config={
+                "date": st.column_config.DateColumn("Date"),
+                "account": st.column_config.TextColumn("Account"),
+                "type": st.column_config.TextColumn("Type"),
+                "symbol": st.column_config.TextColumn("Instrument"),
+                "quantity": st.column_config.NumberColumn("Qty", format="localized"),
+                "price": st.column_config.NumberColumn("Price", format="localized"),
+                "amount": st.column_config.NumberColumn("Amount", format="localized"),
+                "currency": st.column_config.TextColumn("Curr"),
+                "amount_local": st.column_config.NumberColumn(f"Amount ({BASE_CURRENCY})", format="localized"),
+                "batch_id": st.column_config.TextColumn("Batch"),
+                "source_file": st.column_config.TextColumn("Source"),
+                "description": st.column_config.TextColumn("Notes"),
+            },
+            use_container_width=True,
+            hide_index=True,
+            height=600
+        )
 
-        from kodak.shared.calculations import get_fx_performance_detailed
+    # ========================================
+    # PAGE: FX ANALYSIS
+    # ========================================
+    elif page == "💱 FX Analysis":
+        st.title("💱 Currency Performance")
 
         @st.cache_data(ttl=300)
         def load_fx_data():
@@ -431,27 +593,151 @@ if check_password():
 
         df = load_fx_data()
 
-        if not df.empty:
-            st.dataframe(df, use_container_width=True)
+        if df.empty:
+            st.info("No foreign currency exposure found.")
         else:
-            st.info("No FX data available.")
+            total_realized = df['total_realized_pl'].sum()
+            total_unrealized = df['total_unrealized_pl'].sum()
 
-    # --- PAGE: PERFORMANCE ---
-    elif page == "Performance":
-        st.title("Portfolio Performance")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total Realized FX P&L", format_local(total_realized))
+            col2.metric("Total Unrealized FX P&L", format_local(total_unrealized))
+            col3.metric("Total FX P&L", format_local(total_realized + total_unrealized))
 
-        from kodak.shared.calculations import get_total_xirr, get_yearly_contributions
+            st.divider()
+            st.subheader("FX P&L by Currency")
+
+            display_df = df[[
+                'currency', 'realized_cash_pl', 'realized_securities_pl',
+                'total_realized_pl', 'unrealized_securities_pl', 'total_unrealized_pl'
+            ]].copy()
+            display_df['total_fx_pl'] = display_df['total_realized_pl'] + display_df['total_unrealized_pl']
+
+            st.dataframe(
+                display_df,
+                column_config={
+                    "currency": st.column_config.TextColumn("Currency"),
+                    "realized_cash_pl": st.column_config.NumberColumn(f"Cash P&L ({BASE_CURRENCY})", format="localized"),
+                    "realized_securities_pl": st.column_config.NumberColumn("Securities (Realized)", format="localized"),
+                    "total_realized_pl": st.column_config.NumberColumn("Total Realized", format="localized"),
+                    "unrealized_securities_pl": st.column_config.NumberColumn("Securities (Unrealized)", format="localized"),
+                    "total_unrealized_pl": st.column_config.NumberColumn("Total Unrealized", format="localized"),
+                    "total_fx_pl": st.column_config.NumberColumn(f"Total FX P&L ({BASE_CURRENCY})", format="localized"),
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+    # ========================================
+    # PAGE: PERFORMANCE
+    # ========================================
+    elif page == "📊 Performance":
+        st.title("📈 Portfolio Performance")
 
         @st.cache_data(ttl=300)
-        def load_performance_data():
-            xirr = get_total_xirr()
-            contributions = get_yearly_contributions()
-            return xirr, contributions
+        def load_total_xirr():
+            return get_total_xirr()
 
-        xirr, contributions = load_performance_data()
+        @st.cache_data(ttl=300)
+        def load_yearly_equity():
+            return get_yearly_equity_curve()
 
-        st.metric("Total XIRR (Annualized Return)", f"{xirr * 100:.2f}%" if xirr else "N/A")
+        @st.cache_data(ttl=300)
+        def load_yearly_contrib(year):
+            return get_yearly_contribution(year)
 
-        if not contributions.empty:
-            st.subheader("Yearly Contributions")
-            st.dataframe(contributions, use_container_width=True)
+        with st.spinner("Calculating performance..."):
+            total_xirr = load_total_xirr()
+
+        st.metric("All-Time XIRR (Annualized)", f"{format_local(total_xirr, 2)}%")
+        st.divider()
+
+        with st.spinner("Loading yearly data..."):
+            df_years, missing_prices = load_yearly_equity()
+
+        if not df_years.empty:
+            fig = go.Figure()
+
+            fig.add_trace(go.Bar(
+                x=df_years['year'],
+                y=df_years['end_equity'],
+                name='End Equity',
+                marker_color='lightblue',
+                yaxis='y'
+            ))
+
+            fig.add_trace(go.Scatter(
+                x=df_years['year'],
+                y=df_years['return_pct'],
+                name='Annual Return (%)',
+                mode='lines+markers',
+                line=dict(color='firebrick', width=3),
+                yaxis='y2'
+            ))
+
+            fig.update_layout(
+                title='Yearly Equity & Returns',
+                xaxis=dict(title='Year'),
+                yaxis=dict(title='Equity', side='left', showgrid=False),
+                yaxis2=dict(title='Return (%)', side='right', overlaying='y', showgrid=True),
+                legend=dict(x=0.01, y=0.99),
+                hovermode="x unified"
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.subheader("Yearly Summary")
+            st.dataframe(
+                df_years,
+                column_config={
+                    "year": st.column_config.TextColumn("Year"),
+                    "start_equity": st.column_config.NumberColumn("Start Value", format="localized"),
+                    "net_flow": st.column_config.NumberColumn("Net Deposits", format="localized"),
+                    "end_equity": st.column_config.NumberColumn("End Value", format="localized"),
+                    "profit": st.column_config.NumberColumn(f"Profit ({BASE_CURRENCY})", format="localized"),
+                    "return_pct": st.column_config.NumberColumn("XIRR %", format="%.2f%%"),
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+            if missing_prices:
+                with st.expander("Missing / Fallback Prices"):
+                    st.dataframe(pd.DataFrame(missing_prices))
+
+            st.divider()
+            st.subheader("Detailed Analysis by Year")
+
+            selected_year = st.selectbox(
+                "Select Year",
+                df_years['year'].sort_values(ascending=False).tolist()
+            )
+
+            if selected_year:
+                with st.spinner(f"Analyzing {selected_year}..."):
+                    df_contrib, year_xirr, missing_year = load_yearly_contrib(selected_year)
+
+                st.metric(f"{selected_year} XIRR", f"{year_xirr:.2f}%")
+
+                if not df_contrib.empty:
+                    st.dataframe(
+                        df_contrib,
+                        column_config={
+                            "Symbol": st.column_config.TextColumn("Instrument"),
+                            "SOY Value": st.column_config.NumberColumn("SOY Value", format="localized"),
+                            "Net Additions": st.column_config.NumberColumn("Net Additions", format="localized"),
+                            "EOY Value": st.column_config.NumberColumn("EOY Value", format="localized"),
+                            "Dividends": st.column_config.NumberColumn("Divs", format="localized"),
+                            "Profit": st.column_config.NumberColumn("Profit", format="localized"),
+                            "IRR %": st.column_config.NumberColumn("IRR %", format="%.1f%%"),
+                            "Contribution %": st.column_config.NumberColumn("Contr. %", format="%.2f%%"),
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    if missing_year:
+                        with st.expander(f"Missing Prices for {selected_year}"):
+                            st.dataframe(pd.DataFrame(missing_year))
+        else:
+            st.info("No yearly data available.")

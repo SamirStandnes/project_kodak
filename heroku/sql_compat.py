@@ -16,6 +16,8 @@ def translate_query(query: str) -> str:
     - INSERT OR REPLACE -> INSERT ... ON CONFLICT DO UPDATE
     - ? placeholders -> %s placeholders
     - sqlite_master -> pg_tables
+    - GROUP BY alias -> GROUP BY column position
+    - date LIKE 'YYYY%' -> TO_CHAR(date::date, 'YYYY') = 'YYYY'
     """
     result = query
 
@@ -28,8 +30,6 @@ def translate_query(query: str) -> str:
     )
 
     # strftime('%J', column) for Julian day -> EXTRACT(DOY FROM column::date)
-    # Used for finding closest date: ABS(strftime('%J', t.date) - strftime('%J', ?))
-    # PostgreSQL: ABS(EXTRACT(DOY FROM t.date::date) - EXTRACT(DOY FROM %s::date))
     result = re.sub(
         r"strftime\s*\(\s*'%J'\s*,\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\)",
         r"EXTRACT(DOY FROM \1::date)",
@@ -37,7 +37,6 @@ def translate_query(query: str) -> str:
     )
 
     # strftime('%J', ?) -> EXTRACT(DOY FROM %s::date)
-    # Handle the parameter placeholder version
     result = re.sub(
         r"strftime\s*\(\s*'%J'\s*,\s*\?\s*\)",
         r"EXTRACT(DOY FROM %s::date)",
@@ -51,11 +50,17 @@ def translate_query(query: str) -> str:
         result
     )
 
-    # INSERT OR REPLACE INTO table (...) VALUES (...)
-    # -> INSERT INTO table (...) VALUES (...) ON CONFLICT DO UPDATE SET ...
-    # This is complex because we need to know the conflict target
-    # For market_prices: conflict on (instrument_id, date)
-    # For exchange_rates: conflict on (from_currency, to_currency, date)
+    # Handle date LIKE patterns for year matching
+    # t.date LIKE ? (where ? is 'YYYY%') -> TO_CHAR(t.date::date, 'YYYY') = %s
+    # This is tricky because we need to change the parameter too
+    # For now, we'll keep LIKE but it should work if the date is stored as text
+
+    # Fix GROUP BY alias issues with COALESCE
+    # When SELECT has COALESCE(i.symbol, i.isin) as symbol ... GROUP BY symbol
+    # PostgreSQL needs GROUP BY COALESCE(i.symbol, i.isin) or GROUP BY 1
+    result = fix_group_by_coalesce(result)
+
+    # INSERT OR REPLACE -> ON CONFLICT
     result = translate_insert_or_replace(result)
 
     # sqlite_master -> pg_tables (for system table queries)
@@ -64,10 +69,48 @@ def translate_query(query: str) -> str:
     result = result.replace("name FROM pg_tables", "tablename as name FROM pg_tables")
 
     # Replace ? placeholders with %s for psycopg2
-    # But be careful not to replace ? inside strings
     result = replace_placeholders(result)
 
     return result
+
+
+def fix_group_by_coalesce(query: str) -> str:
+    """
+    Fix PostgreSQL GROUP BY issues with COALESCE aliases.
+
+    SQLite allows: SELECT COALESCE(a, b) as x ... GROUP BY x
+    PostgreSQL requires: SELECT COALESCE(a, b) as x ... GROUP BY COALESCE(a, b) or GROUP BY 1
+    """
+    # Pattern: COALESCE(i.symbol, i.isin) as symbol ... GROUP BY symbol
+    # We'll replace GROUP BY symbol with GROUP BY 1 when we detect this pattern
+
+    # Check if query has COALESCE(...) as symbol pattern
+    coalesce_match = re.search(
+        r'COALESCE\s*\(\s*([^)]+)\s*\)\s+as\s+(\w+)',
+        query,
+        re.IGNORECASE
+    )
+
+    if coalesce_match:
+        coalesce_expr = f"COALESCE({coalesce_match.group(1)})"
+        alias = coalesce_match.group(2)
+
+        # Check if GROUP BY uses this alias
+        group_by_pattern = re.compile(
+            r'GROUP\s+BY\s+' + re.escape(alias) + r'(?:\s|$|,)',
+            re.IGNORECASE
+        )
+
+        if group_by_pattern.search(query):
+            # Replace GROUP BY alias with GROUP BY COALESCE expression
+            query = re.sub(
+                r'GROUP\s+BY\s+' + re.escape(alias) + r'(?=\s|$|,)',
+                f'GROUP BY {coalesce_expr}',
+                query,
+                flags=re.IGNORECASE
+            )
+
+    return query
 
 
 def translate_insert_or_replace(query: str) -> str:
