@@ -4,6 +4,24 @@ This document outlines the future direction of Project Kodak. We aim to make por
 
 ---
 
+## ✅ Completed Features
+
+### 🌐 Cloud Deployment (Web App)
+**Status:** Complete
+
+Access your portfolio dashboard from your phone or any browser via Heroku deployment.
+
+**What's Included:**
+- PostgreSQL database adapter (replaces SQLite for cloud)
+- SQL translation layer (SQLite → PostgreSQL syntax)
+- Password-protected dashboard
+- Daily automatic price updates via Heroku Scheduler
+- One-command data migration from local SQLite to cloud PostgreSQL
+
+**See:** [Heroku Deployment Guide](../heroku/README.md)
+
+---
+
 ## 🚀 Upcoming Features
 
 ### 1. 🤖 AI-Powered Auto-Onboarding (Magic Parsers)
@@ -31,24 +49,10 @@ This document outlines the future direction of Project Kodak. We aim to make por
 ### 2. 📊 Advanced Analytics
 *   **Benchmarking:** Compare portfolio performance against indices (S&P 500, OSEBX).
 *   **Tax Estimation:** Rough estimation of tax liabilities based on realized gains (Norwegian rules).
-*   **Dividend Calendar:** Forecast future dividend income based on historical data.
+*   ~~**Dividend Calendar:** Forecast future dividend income based on historical data.~~ ✅ Done
 
 ### 3. ☁️ Optional Cloud Sync
 *   Ability to securely backup the SQLite database to Google Drive or Dropbox.
-
-### 4. 🌐 Cloud Deployment (Web App)
-**Goal:** Access your portfolio dashboard from your phone or any browser.
-
-**Current Limitation:** The app uses SQLite, which doesn't work on cloud platforms with ephemeral filesystems (Heroku, Railway, Render). The database gets wiped on every restart.
-
-**Required Changes:**
-1.  **PostgreSQL Support** - Add database abstraction layer to support both SQLite (local) and PostgreSQL (cloud)
-2.  **Redis Caching** (optional) - Persistent cache for FX rates and calculations across dyno restarts
-3.  **Docker Support** - Containerize for easy deployment
-4.  **Authentication** - Add login screen to protect financial data when hosted publicly
-5.  **Environment Config** - Database URL via environment variables (`DATABASE_URL`)
-
-**Target Platforms:** Heroku, Railway, Render, Streamlit Cloud, AWS
 
 ---
 

@@ -25,6 +25,20 @@ This setting affects:
 *   **Deep Performance Analysis:** Tracks Realized/Unrealized Gains, Dividend yields, Interest expenses, and FX P&L.
 *   **Staging Workflow:** Review and verify transactions before they hit your master database.
 *   **Modern Dashboard:** Interactive UI built with Streamlit and Plotly.
+*   **Cloud Ready:** Deploy to Heroku for mobile/web access with PostgreSQL backend.
+
+---
+
+## ☁️ Cloud Deployment (Optional)
+
+Want to access your portfolio from your phone? Deploy the dashboard to Heroku:
+
+1. Create a Heroku app with PostgreSQL addon
+2. Set `DASHBOARD_PASSWORD` environment variable
+3. Connect your GitHub repo for auto-deploy
+4. Migrate your local data: `python -m heroku.scripts.migrate_db`
+
+**See:** [Heroku Deployment Guide](heroku/README.md) for full instructions.
 
 ---
 
@@ -59,9 +73,11 @@ python -m kodak.setup.initialize_database
 │   ├── pipeline/              <-- Data ingestion & enrichment
 │   │   └── parsers/           <-- Broker plugins (nordnet, saxo, etc.)
 │   ├── cli/                   <-- Terminal analysis tools
-│   ├── dashboard/             <-- Streamlit UI
+│   ├── dashboard/             <-- Streamlit UI (local)
 │   ├── setup/                 <-- Database initialization
 │   └── maintenance/           <-- Helper scripts
+├── heroku/                    <-- Cloud deployment (Heroku/PostgreSQL)
+│   └── scripts/               <-- Migration & price update scripts
 ├── data/
 │   ├── new_raw_transactions/  <-- Place broker exports here
 │   └── reference/             <-- ISIN and Account mappings
