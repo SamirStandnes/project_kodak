@@ -68,6 +68,11 @@ def translate_query(query: str) -> str:
     # PostgreSQL needs GROUP BY COALESCE(i.symbol, i.isin) or GROUP BY 1
     result = fix_group_by_coalesce(result)
 
+    # Fix GROUP BY with non-aggregated joined columns
+    # SQLite allows: SELECT i.symbol, i.currency, SUM(t.amount) ... GROUP BY t.instrument_id
+    # PostgreSQL requires: GROUP BY t.instrument_id, i.symbol, i.currency
+    result = fix_group_by_joined_columns(result)
+
     # INSERT OR REPLACE -> ON CONFLICT
     result = translate_insert_or_replace(result)
 
@@ -117,6 +122,91 @@ def fix_group_by_coalesce(query: str) -> str:
                 query,
                 flags=re.IGNORECASE
             )
+
+    return query
+
+
+def fix_group_by_joined_columns(query: str) -> str:
+    """
+    Fix PostgreSQL GROUP BY with non-aggregated columns from joined tables.
+
+    SQLite allows selecting columns from joined tables without including them in GROUP BY.
+    PostgreSQL requires all non-aggregated columns to be in GROUP BY.
+
+    Example:
+        SELECT i.symbol, i.currency, SUM(t.amount)
+        FROM transactions t
+        LEFT JOIN instruments i ON t.instrument_id = i.id
+        GROUP BY t.instrument_id
+    Must become:
+        GROUP BY t.instrument_id, i.symbol, i.currency
+    """
+    # Only process SELECT queries with GROUP BY
+    if 'GROUP BY' not in query.upper() or 'SELECT' not in query.upper():
+        return query
+
+    # Find SELECT and GROUP BY clauses
+    select_match = re.search(
+        r'SELECT\s+(.*?)\s+FROM',
+        query,
+        re.IGNORECASE | re.DOTALL
+    )
+    group_by_match = re.search(
+        r'GROUP\s+BY\s+([^\n;]+)',
+        query,
+        re.IGNORECASE
+    )
+
+    if not select_match or not group_by_match:
+        return query
+
+    select_clause = select_match.group(1)
+    group_by_clause = group_by_match.group(1).strip()
+
+    # Extract non-aggregated columns from SELECT
+    # Aggregates: SUM, COUNT, AVG, MIN, MAX, etc.
+    aggregate_pattern = re.compile(r'\b(SUM|COUNT|AVG|MIN|MAX|GROUP_CONCAT)\s*\(', re.IGNORECASE)
+
+    # Split select clause by comma, handling nested functions
+    columns = []
+    depth = 0
+    current = ""
+    for char in select_clause:
+        if char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+        elif char == ',' and depth == 0:
+            columns.append(current.strip())
+            current = ""
+            continue
+        current += char
+    if current.strip():
+        columns.append(current.strip())
+
+    # Find non-aggregated table.column references
+    non_agg_columns = []
+    for col in columns:
+        # Skip if it's an aggregate
+        if aggregate_pattern.search(col):
+            continue
+        # Extract table.column pattern (e.g., i.symbol, i.currency)
+        col_match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*)', col.strip())
+        if col_match:
+            col_ref = col_match.group(1)
+            # Check if already in GROUP BY
+            if col_ref.lower() not in group_by_clause.lower():
+                non_agg_columns.append(col_ref)
+
+    # Add missing columns to GROUP BY
+    if non_agg_columns:
+        new_group_by = group_by_clause + ', ' + ', '.join(non_agg_columns)
+        query = re.sub(
+            r'(GROUP\s+BY\s+)' + re.escape(group_by_clause),
+            r'\1' + new_group_by,
+            query,
+            flags=re.IGNORECASE
+        )
 
     return query
 

@@ -63,41 +63,69 @@ if check_password():
         layout="wide"
     )
 
+    # Hide radio button circles and style as text links
+    st.markdown("""
+        <style>
+        /* Hide radio button circles */
+        div[data-testid="stSidebar"] .stRadio > div {
+            flex-direction: column;
+            gap: 0;
+        }
+        div[data-testid="stSidebar"] .stRadio > div > label {
+            padding: 0.5rem 0.75rem;
+            margin: 0;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        div[data-testid="stSidebar"] .stRadio > div > label:hover {
+            background-color: rgba(151, 166, 195, 0.15);
+        }
+        div[data-testid="stSidebar"] .stRadio > div > label > div:first-child {
+            display: none;
+        }
+        div[data-testid="stSidebar"] .stRadio > div > label > div:last-child {
+            padding-left: 0;
+        }
+        /* Highlight selected item */
+        div[data-testid="stSidebar"] .stRadio > div > label[data-checked="true"] {
+            background-color: rgba(151, 166, 195, 0.25);
+            font-weight: 600;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     # --- SIDEBAR NAVIGATION ---
     with st.sidebar:
-        st.title("📊 Kodak Portfolio")
-        st.caption(f"Base Currency: {BASE_CURRENCY}")
-
-        st.divider()
-
-        # Navigation using selectbox for cleaner look
-        page = st.selectbox(
-            "Navigate to",
+        # Page links (similar to native Streamlit multi-page)
+        page = st.radio(
+            "Navigation",
             [
-                "📈 Overview",
-                "🏦 Holdings",
-                "💰 Dividends",
-                "💳 Interest",
-                "💸 Fees",
-                "📝 Activity",
-                "💱 FX Analysis",
-                "📊 Performance"
+                "Overview",
+                "Holdings",
+                "Dividends",
+                "Interest",
+                "Fees",
+                "Activity",
+                "FX Analysis",
+                "Performance"
             ],
             label_visibility="collapsed"
         )
 
-        # Spacer to push logout to bottom
-        st.markdown("<br>" * 10, unsafe_allow_html=True)
+        # Spacer
+        for _ in range(15):
+            st.write("")
 
         st.divider()
-        if st.button("🔒 Logout", use_container_width=True):
+        st.caption(f"Base: {BASE_CURRENCY}")
+        if st.button("Logout", use_container_width=True):
             st.session_state["password_correct"] = False
             st.rerun()
 
     # ========================================
     # PAGE: OVERVIEW
     # ========================================
-    if page == "📈 Overview":
+    if page == "Overview":
         st.title("Portfolio Overview")
 
         @st.cache_data(ttl=300)
@@ -225,7 +253,7 @@ if check_password():
     # ========================================
     # PAGE: HOLDINGS
     # ========================================
-    elif page == "🏦 Holdings":
+    elif page == "Holdings":
         st.title("Current Holdings")
 
         @st.cache_data(ttl=300)
@@ -315,7 +343,7 @@ if check_password():
     # ========================================
     # PAGE: DIVIDENDS
     # ========================================
-    elif page == "💰 Dividends":
+    elif page == "Dividends":
         st.title("💰 Dividend Analysis")
 
         @st.cache_data(ttl=300)
@@ -390,7 +418,7 @@ if check_password():
     # ========================================
     # PAGE: INTEREST
     # ========================================
-    elif page == "💳 Interest":
+    elif page == "Interest":
         st.title("🏦 Interest Analysis")
 
         @st.cache_data(ttl=300)
@@ -440,7 +468,7 @@ if check_password():
     # ========================================
     # PAGE: FEES
     # ========================================
-    elif page == "💸 Fees":
+    elif page == "Fees":
         st.title("💸 Fee Analysis")
 
         @st.cache_data(ttl=300)
@@ -525,7 +553,7 @@ if check_password():
     # ========================================
     # PAGE: ACTIVITY
     # ========================================
-    elif page == "📝 Activity":
+    elif page == "Activity":
         st.title("📝 Portfolio Activity")
 
         col1, col2 = st.columns([2, 1])
@@ -589,7 +617,7 @@ if check_password():
     # ========================================
     # PAGE: FX ANALYSIS
     # ========================================
-    elif page == "💱 FX Analysis":
+    elif page == "FX Analysis":
         st.title("💱 Currency Performance")
 
         @st.cache_data(ttl=300)
@@ -636,7 +664,7 @@ if check_password():
     # ========================================
     # PAGE: PERFORMANCE
     # ========================================
-    elif page == "📊 Performance":
+    elif page == "Performance":
         st.title("📈 Portfolio Performance")
 
         @st.cache_data(ttl=300)
