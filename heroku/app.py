@@ -63,64 +63,74 @@ if check_password():
         layout="wide"
     )
 
-    # Hide radio button circles and style as text links
+    # Style sidebar navigation like native Streamlit pages
     st.markdown("""
         <style>
-        /* Hide radio button circles */
-        div[data-testid="stSidebar"] .stRadio > div {
-            flex-direction: column;
-            gap: 0;
+        /* Navigation button styling */
+        div[data-testid="stSidebar"] button[kind="secondary"] {
+            background-color: transparent;
+            border: none;
+            text-align: left;
+            padding: 0.5rem 1rem;
+            width: 100%;
+            font-weight: normal;
         }
-        div[data-testid="stSidebar"] .stRadio > div > label {
-            padding: 0.5rem 0.75rem;
-            margin: 0;
-            cursor: pointer;
-            border-radius: 4px;
-        }
-        div[data-testid="stSidebar"] .stRadio > div > label:hover {
+        div[data-testid="stSidebar"] button[kind="secondary"]:hover {
             background-color: rgba(151, 166, 195, 0.15);
+            border: none;
         }
-        div[data-testid="stSidebar"] .stRadio > div > label > div:first-child {
-            display: none;
+        div[data-testid="stSidebar"] button[kind="secondary"]:focus {
+            box-shadow: none;
         }
-        div[data-testid="stSidebar"] .stRadio > div > label > div:last-child {
-            padding-left: 0;
-        }
-        /* Highlight selected item */
-        div[data-testid="stSidebar"] .stRadio > div > label[data-checked="true"] {
+        /* Active page styling */
+        div[data-testid="stSidebar"] button[kind="primary"] {
             background-color: rgba(151, 166, 195, 0.25);
+            border: none;
+            text-align: left;
+            padding: 0.5rem 1rem;
+            width: 100%;
             font-weight: 600;
         }
         </style>
     """, unsafe_allow_html=True)
 
+    # Initialize page state
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = "Overview"
+
     # --- SIDEBAR NAVIGATION ---
+    pages = [
+        ("📈", "Overview"),
+        ("🏦", "Holdings"),
+        ("💰", "Dividends"),
+        ("💳", "Interest"),
+        ("💸", "Fees"),
+        ("📝", "Activity"),
+        ("💱", "FX Analysis"),
+        ("📊", "Performance"),
+    ]
+
     with st.sidebar:
-        # Page links (similar to native Streamlit multi-page)
-        page = st.radio(
-            "Navigation",
-            [
-                "Overview",
-                "Holdings",
-                "Dividends",
-                "Interest",
-                "Fees",
-                "Activity",
-                "FX Analysis",
-                "Performance"
-            ],
-            label_visibility="collapsed"
-        )
+        for icon, name in pages:
+            is_active = st.session_state.current_page == name
+            if st.button(
+                f"{icon} {name}",
+                key=f"nav_{name}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary"
+            ):
+                st.session_state.current_page = name
+                st.rerun()
 
-        # Spacer
-        for _ in range(15):
-            st.write("")
-
+        st.write("")
+        st.write("")
         st.divider()
         st.caption(f"Base: {BASE_CURRENCY}")
-        if st.button("Logout", use_container_width=True):
+        if st.button("🚪 Logout", use_container_width=True, type="secondary"):
             st.session_state["password_correct"] = False
             st.rerun()
+
+    page = st.session_state.current_page
 
     # ========================================
     # PAGE: OVERVIEW
