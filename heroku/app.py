@@ -366,6 +366,12 @@ if check_password():
 
         df_yearly, df_current_year, df_all_time = load_dividend_data()
 
+        # Round numeric columns for clean display
+        if not df_current_year.empty:
+            df_current_year['total'] = df_current_year['total'].round(0)
+        if not df_all_time.empty:
+            df_all_time['total'] = df_all_time['total'].round(0)
+
         col1, col2 = st.columns([2, 1])
 
         with col1:
@@ -406,6 +412,11 @@ if check_password():
             df_forecast, forecast_summary = load_dividend_forecast()
 
         if not df_forecast.empty:
+            # Round numeric columns
+            df_forecast['quantity'] = df_forecast['quantity'].round(0)
+            df_forecast['annual_estimate'] = df_forecast['annual_estimate'].round(0)
+            df_forecast['annual_estimate_local'] = df_forecast['annual_estimate_local'].round(0)
+
             st.metric("Estimated Annual Dividends", f"{forecast_summary['total_estimate_local']:,.0f} {BASE_CURRENCY}")
 
             st.dataframe(
@@ -436,6 +447,13 @@ if check_password():
             return get_interest_details()
 
         df_yearly, df_currency, df_top = load_interest_data()
+
+        # Round numeric columns for clean display
+        if not df_currency.empty:
+            df_currency['total'] = df_currency['total'].round(0)
+        if not df_top.empty:
+            df_top['amount'] = df_top['amount'].round(0)
+            df_top['amount_local'] = df_top['amount_local'].round(0)
 
         total_interest = df_yearly['total'].sum() if not df_yearly.empty else 0
         st.metric("Total Interest Paid (All Time)", format_local(total_interest))
@@ -487,6 +505,12 @@ if check_password():
 
         df_yearly, df_currency, df_top = load_fee_data()
 
+        # Round numeric columns for clean display
+        if not df_currency.empty:
+            df_currency['total'] = df_currency['total'].round(0)
+        if not df_top.empty:
+            df_top['amount_local'] = df_top['amount_local'].round(0)
+
         total_fees = df_yearly['total'].sum() if not df_yearly.empty else 0
         st.metric("Total Fees Paid (All Time)", format_local(total_fees))
 
@@ -530,6 +554,11 @@ if check_password():
 
         df_broker = get_fee_analysis()
         if not df_broker.empty:
+            # Round numeric columns
+            df_broker['total_traded'] = df_broker['total_traded'].round(0)
+            df_broker['total_fees'] = df_broker['total_fees'].round(0)
+            df_broker['num_trades'] = df_broker['num_trades'].round(0)
+
             st.dataframe(
                 df_broker,
                 column_config={
@@ -548,6 +577,11 @@ if check_password():
 
         df_platform = get_platform_fees()
         if not df_platform.empty:
+            # Round numeric columns
+            df_platform['total_fees'] = df_platform['total_fees'].round(0)
+            df_platform['monthly_avg'] = df_platform['monthly_avg'].round(0)
+            df_platform['num_charges'] = df_platform['num_charges'].round(0)
+
             st.dataframe(
                 df_platform,
                 column_config={
@@ -656,6 +690,12 @@ if check_password():
             ]].copy()
             display_df['total_fx_pl'] = display_df['total_realized_pl'] + display_df['total_unrealized_pl']
 
+            # Round all numeric columns
+            numeric_cols = ['realized_cash_pl', 'realized_securities_pl', 'total_realized_pl',
+                           'unrealized_securities_pl', 'total_unrealized_pl', 'total_fx_pl']
+            for col in numeric_cols:
+                display_df[col] = display_df[col].round(0)
+
             st.dataframe(
                 display_df,
                 column_config={
@@ -699,6 +739,12 @@ if check_password():
             df_years, missing_prices = load_yearly_equity()
 
         if not df_years.empty:
+            # Round numeric columns for clean display
+            df_years['start_equity'] = df_years['start_equity'].round(0)
+            df_years['net_flow'] = df_years['net_flow'].round(0)
+            df_years['end_equity'] = df_years['end_equity'].round(0)
+            df_years['profit'] = df_years['profit'].round(0)
+
             fig = go.Figure()
 
             fig.add_trace(go.Bar(
@@ -763,6 +809,13 @@ if check_password():
                 st.metric(f"{selected_year} XIRR", f"{year_xirr:.2f}%")
 
                 if not df_contrib.empty:
+                    # Round numeric columns
+                    df_contrib['SOY Value'] = df_contrib['SOY Value'].round(0)
+                    df_contrib['Net Additions'] = df_contrib['Net Additions'].round(0)
+                    df_contrib['EOY Value'] = df_contrib['EOY Value'].round(0)
+                    df_contrib['Dividends'] = df_contrib['Dividends'].round(0)
+                    df_contrib['Profit'] = df_contrib['Profit'].round(0)
+
                     st.dataframe(
                         df_contrib,
                         column_config={
