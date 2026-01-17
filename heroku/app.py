@@ -637,6 +637,12 @@ if check_password():
 
         st.metric("Transactions Displayed", len(df))
 
+        # Round to 2 decimal places for Activity
+        df['quantity'] = df['quantity'].round(2)
+        df['price'] = df['price'].round(2)
+        df['amount'] = df['amount'].round(2)
+        df['amount_local'] = df['amount_local'].round(2)
+
         st.dataframe(
             df,
             column_config={
@@ -644,11 +650,11 @@ if check_password():
                 "account": st.column_config.TextColumn("Account"),
                 "type": st.column_config.TextColumn("Type"),
                 "symbol": st.column_config.TextColumn("Instrument"),
-                "quantity": st.column_config.NumberColumn("Qty", format="%.2f"),
-                "price": st.column_config.NumberColumn("Price", format="%.2f"),
-                "amount": st.column_config.NumberColumn("Amount", format="%.2f"),
+                "quantity": st.column_config.NumberColumn("Qty", format="localized"),
+                "price": st.column_config.NumberColumn("Price", format="localized"),
+                "amount": st.column_config.NumberColumn("Amount", format="localized"),
                 "currency": st.column_config.TextColumn("Curr"),
-                "amount_local": st.column_config.NumberColumn(f"Amount ({BASE_CURRENCY})", format="%.2f"),
+                "amount_local": st.column_config.NumberColumn(f"Amount ({BASE_CURRENCY})", format="localized"),
                 "batch_id": st.column_config.TextColumn("Batch"),
                 "source_file": st.column_config.TextColumn("Source"),
                 "description": st.column_config.TextColumn("Notes"),
