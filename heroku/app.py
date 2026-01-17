@@ -68,14 +68,11 @@ if check_password():
         st.title("📊 Kodak Portfolio")
         st.caption(f"Base Currency: {BASE_CURRENCY}")
 
-        if st.button("🔒 Logout"):
-            st.session_state["password_correct"] = False
-            st.rerun()
-
         st.divider()
 
-        page = st.radio(
-            "Navigation",
+        # Navigation using selectbox for cleaner look
+        page = st.selectbox(
+            "Navigate to",
             [
                 "📈 Overview",
                 "🏦 Holdings",
@@ -88,6 +85,14 @@ if check_password():
             ],
             label_visibility="collapsed"
         )
+
+        # Spacer to push logout to bottom
+        st.markdown("<br>" * 10, unsafe_allow_html=True)
+
+        st.divider()
+        if st.button("🔒 Logout", use_container_width=True):
+            st.session_state["password_correct"] = False
+            st.rerun()
 
     # ========================================
     # PAGE: OVERVIEW
@@ -271,19 +276,19 @@ if check_password():
 
                 data.append({
                     "Symbol": row['symbol'],
-                    "Quantity": round(row['quantity'], 0),
+                    "Quantity": int(round(row['quantity'], 0)),
                     "Sector": mkt['sector'],
                     "Region": mkt['region'],
                     "Country": mkt['country'],
                     "Type": mkt['asset_class'],
-                    "Market Value": round(market_val, 0),
-                    "Gain/Loss": round(gain, 0),
-                    "Return %": ret_pct
+                    "Market Value": int(round(market_val, 0)),
+                    "Gain/Loss": int(round(gain, 0)),
+                    "Return %": round(ret_pct, 1)
                 })
 
             df = pd.DataFrame(data)
             if not df.empty:
-                df['Weight %'] = (df['Market Value'] / total_val) * 100
+                df['Weight %'] = round((df['Market Value'] / total_val) * 100, 1)
                 df = df.sort_values('Market Value', ascending=False)
 
             return df
