@@ -339,9 +339,9 @@ if check_password():
             st.dataframe(
                 df,
                 column_config={
-                    "Quantity": st.column_config.NumberColumn(format="%,.0f"),
-                    "Market Value": st.column_config.NumberColumn(f"Market Value ({BASE_CURRENCY})", format="%,.0f"),
-                    "Gain/Loss": st.column_config.NumberColumn(f"Gain/Loss ({BASE_CURRENCY})", format="%,.0f"),
+                    "Quantity": st.column_config.NumberColumn(format="localized"),
+                    "Market Value": st.column_config.NumberColumn(f"Market Value ({BASE_CURRENCY})", format="localized"),
+                    "Gain/Loss": st.column_config.NumberColumn(f"Gain/Loss ({BASE_CURRENCY})", format="localized"),
                     "Return %": st.column_config.NumberColumn(format="%.1f%%"),
                     "Weight %": st.column_config.ProgressColumn(format="%.1f%%", min_value=0, max_value=100),
                 },
@@ -380,7 +380,7 @@ if check_password():
                     df_current_year,
                     column_config={
                         "symbol": st.column_config.TextColumn("Instrument"),
-                        "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="%,.0f"),
+                        "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="localized"),
                     },
                     use_container_width=True,
                     hide_index=True
@@ -393,7 +393,7 @@ if check_password():
                 df_all_time.head(30),
                 column_config={
                     "symbol": st.column_config.TextColumn("Instrument"),
-                    "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="%,.0f"),
+                    "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="localized"),
                 },
                 use_container_width=True,
                 hide_index=True
@@ -412,11 +412,11 @@ if check_password():
                 df_forecast.sort_values('annual_estimate_local', ascending=False),
                 column_config={
                     "symbol": st.column_config.TextColumn("Symbol"),
-                    "quantity": st.column_config.NumberColumn("Shares", format="%,.0f"),
+                    "quantity": st.column_config.NumberColumn("Shares", format="localized"),
                     "dividend_per_share": st.column_config.NumberColumn("Div/Share", format="%.2f"),
                     "currency": st.column_config.TextColumn("Currency"),
-                    "annual_estimate": st.column_config.NumberColumn("Annual Est.", format="%,.0f"),
-                    "annual_estimate_local": st.column_config.NumberColumn(f"Est. ({BASE_CURRENCY})", format="%,.0f"),
+                    "annual_estimate": st.column_config.NumberColumn("Annual Est.", format="localized"),
+                    "annual_estimate_local": st.column_config.NumberColumn(f"Est. ({BASE_CURRENCY})", format="localized"),
                     "source": st.column_config.TextColumn("Source"),
                 },
                 use_container_width=True,
@@ -454,7 +454,7 @@ if check_password():
                     df_currency,
                     column_config={
                         "currency": st.column_config.TextColumn("Currency"),
-                        "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="%,.0f"),
+                        "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="localized"),
                     },
                     use_container_width=True,
                     hide_index=True
@@ -467,8 +467,8 @@ if check_password():
                 column_config={
                     "date": st.column_config.DateColumn("Date"),
                     "currency": st.column_config.TextColumn("Curr"),
-                    "amount": st.column_config.NumberColumn("Amount (Orig)", format="%,.0f"),
-                    "amount_local": st.column_config.NumberColumn(f"Amount ({BASE_CURRENCY})", format="%,.0f"),
+                    "amount": st.column_config.NumberColumn("Amount (Orig)", format="localized"),
+                    "amount_local": st.column_config.NumberColumn(f"Amount ({BASE_CURRENCY})", format="localized"),
                     "source_file": st.column_config.TextColumn("Source"),
                 },
                 use_container_width=True,
@@ -504,7 +504,7 @@ if check_password():
                     df_currency,
                     column_config={
                         "currency": st.column_config.TextColumn("Currency"),
-                        "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="%,.0f"),
+                        "total": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="localized"),
                     },
                     use_container_width=True,
                     hide_index=True
@@ -518,7 +518,7 @@ if check_password():
                 column_config={
                     "date": st.column_config.DateColumn("Date"),
                     "currency": st.column_config.TextColumn("Currency"),
-                    "amount_local": st.column_config.NumberColumn(f"Fee ({BASE_CURRENCY})", format="%,.0f"),
+                    "amount_local": st.column_config.NumberColumn(f"Fee ({BASE_CURRENCY})", format="localized"),
                     "source_file": st.column_config.TextColumn("Source"),
                 },
                 use_container_width=True,
@@ -534,10 +534,10 @@ if check_password():
                 df_broker,
                 column_config={
                     "broker": st.column_config.TextColumn("Broker"),
-                    "total_traded": st.column_config.NumberColumn(f"Total Traded ({BASE_CURRENCY})", format="%,.0f"),
-                    "total_fees": st.column_config.NumberColumn(f"Total Fees ({BASE_CURRENCY})", format="%,.0f"),
+                    "total_traded": st.column_config.NumberColumn(f"Total Traded ({BASE_CURRENCY})", format="localized"),
+                    "total_fees": st.column_config.NumberColumn(f"Total Fees ({BASE_CURRENCY})", format="localized"),
                     "fee_per_100": st.column_config.NumberColumn(f"Fee per 100 {BASE_CURRENCY}", format="%.4f"),
-                    "num_trades": st.column_config.NumberColumn("# Trades", format="%,.0f"),
+                    "num_trades": st.column_config.NumberColumn("# Trades", format="localized"),
                 },
                 use_container_width=True,
                 hide_index=True
@@ -552,9 +552,9 @@ if check_password():
                 df_platform,
                 column_config={
                     "broker": st.column_config.TextColumn("Broker"),
-                    "total_fees": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="%,.0f"),
-                    "monthly_avg": st.column_config.NumberColumn(f"Avg Monthly ({BASE_CURRENCY})", format="%,.0f"),
-                    "num_charges": st.column_config.NumberColumn("# Charges", format="%,.0f"),
+                    "total_fees": st.column_config.NumberColumn(f"Total ({BASE_CURRENCY})", format="localized"),
+                    "monthly_avg": st.column_config.NumberColumn(f"Avg Monthly ({BASE_CURRENCY})", format="localized"),
+                    "num_charges": st.column_config.NumberColumn("# Charges", format="localized"),
                 },
                 use_container_width=True,
                 hide_index=True
@@ -660,12 +660,12 @@ if check_password():
                 display_df,
                 column_config={
                     "currency": st.column_config.TextColumn("Currency"),
-                    "realized_cash_pl": st.column_config.NumberColumn(f"Cash P&L ({BASE_CURRENCY})", format="%,.0f"),
-                    "realized_securities_pl": st.column_config.NumberColumn("Securities (Realized)", format="%,.0f"),
-                    "total_realized_pl": st.column_config.NumberColumn("Total Realized", format="%,.0f"),
-                    "unrealized_securities_pl": st.column_config.NumberColumn("Securities (Unrealized)", format="%,.0f"),
-                    "total_unrealized_pl": st.column_config.NumberColumn("Total Unrealized", format="%,.0f"),
-                    "total_fx_pl": st.column_config.NumberColumn(f"Total FX P&L ({BASE_CURRENCY})", format="%,.0f"),
+                    "realized_cash_pl": st.column_config.NumberColumn(f"Cash P&L ({BASE_CURRENCY})", format="localized"),
+                    "realized_securities_pl": st.column_config.NumberColumn("Securities (Realized)", format="localized"),
+                    "total_realized_pl": st.column_config.NumberColumn("Total Realized", format="localized"),
+                    "unrealized_securities_pl": st.column_config.NumberColumn("Securities (Unrealized)", format="localized"),
+                    "total_unrealized_pl": st.column_config.NumberColumn("Total Unrealized", format="localized"),
+                    "total_fx_pl": st.column_config.NumberColumn(f"Total FX P&L ({BASE_CURRENCY})", format="localized"),
                 },
                 use_container_width=True,
                 hide_index=True
@@ -734,10 +734,10 @@ if check_password():
                 df_years,
                 column_config={
                     "year": st.column_config.TextColumn("Year"),
-                    "start_equity": st.column_config.NumberColumn("Start Value", format="%,.0f"),
-                    "net_flow": st.column_config.NumberColumn("Net Deposits", format="%,.0f"),
-                    "end_equity": st.column_config.NumberColumn("End Value", format="%,.0f"),
-                    "profit": st.column_config.NumberColumn(f"Profit ({BASE_CURRENCY})", format="%,.0f"),
+                    "start_equity": st.column_config.NumberColumn("Start Value", format="localized"),
+                    "net_flow": st.column_config.NumberColumn("Net Deposits", format="localized"),
+                    "end_equity": st.column_config.NumberColumn("End Value", format="localized"),
+                    "profit": st.column_config.NumberColumn(f"Profit ({BASE_CURRENCY})", format="localized"),
                     "return_pct": st.column_config.NumberColumn("XIRR %", format="%.2f%%"),
                 },
                 use_container_width=True,
@@ -767,11 +767,11 @@ if check_password():
                         df_contrib,
                         column_config={
                             "Symbol": st.column_config.TextColumn("Instrument"),
-                            "SOY Value": st.column_config.NumberColumn("SOY Value", format="%,.0f"),
-                            "Net Additions": st.column_config.NumberColumn("Net Additions", format="%,.0f"),
-                            "EOY Value": st.column_config.NumberColumn("EOY Value", format="%,.0f"),
-                            "Dividends": st.column_config.NumberColumn("Divs", format="%,.0f"),
-                            "Profit": st.column_config.NumberColumn("Profit", format="%,.0f"),
+                            "SOY Value": st.column_config.NumberColumn("SOY Value", format="localized"),
+                            "Net Additions": st.column_config.NumberColumn("Net Additions", format="localized"),
+                            "EOY Value": st.column_config.NumberColumn("EOY Value", format="localized"),
+                            "Dividends": st.column_config.NumberColumn("Divs", format="localized"),
+                            "Profit": st.column_config.NumberColumn("Profit", format="localized"),
                             "IRR %": st.column_config.NumberColumn("IRR %", format="%.1f%%"),
                             "Contribution %": st.column_config.NumberColumn("Contr. %", format="%.2f%%"),
                         },
