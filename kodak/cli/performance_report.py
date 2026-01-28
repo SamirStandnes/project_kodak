@@ -1,5 +1,6 @@
 import sys
 import argparse
+import json
 import pandas as pd
 from rich.console import Console
 from rich.table import Table
@@ -11,13 +12,41 @@ from kodak.shared.utils import load_config
 config = load_config()
 BASE_CURRENCY = config.get('base_currency', 'NOK')
 
+def export_json(output_path: str) -> None:
+    """Export yearly performance and total XIRR to JSON for external projects (e.g., oceanview)."""
+    df_years, _ = get_yearly_equity_curve()
+    total_xirr = get_total_xirr()
+
+    years_data = [
+        {"year": str(row['year']), "return_pct": round(row['return_pct'], 1)}
+        for _, row in df_years.iterrows()
+    ]
+
+    output = {
+        "years": years_data,
+        "total_xirr": round(total_xirr, 1)
+    }
+
+    with open(output_path, 'w') as f:
+        json.dump(output, f, indent=2)
+
+    print(f"Performance data exported to: {output_path}")
+
+
 def run_report():
     parser = argparse.ArgumentParser(description="Kodak Portfolio Performance Report")
     parser.add_argument("year", nargs="?", help="Year to analyze in detail (e.g., 2021)")
     parser.add_argument("--total", action="store_true", help="Show only All-Time XIRR")
     parser.add_argument("--timeline", action="store_true", help="Show only Yearly Timeline")
-    
+    parser.add_argument("--json", metavar="FILE", help="Export performance data to JSON file for external projects")
+
     args = parser.parse_args()
+
+    # Handle JSON export mode
+    if args.json:
+        export_json(args.json)
+        return
+
     console = Console()
     
     # Header

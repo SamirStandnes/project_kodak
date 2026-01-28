@@ -174,7 +174,10 @@ def get_yearly_contribution(target_year: str) -> Tuple[pd.DataFrame, float, List
         df = pd.read_sql(query, conn, params=(f"{target_year}-12-31",))
     if df.empty: return pd.DataFrame(), 0.0
     
-    soy_date = f"{int(target_year)-1}-12-31"; eoy_date = f"{target_year}-12-31"
+    soy_date = f"{int(target_year)-1}-12-31"
+    # For current year, use today's date instead of Dec 31
+    today = datetime.now().strftime("%Y-%m-%d")
+    eoy_date = today if str(target_year) == today[:4] else f"{target_year}-12-31"
     split_map = get_internal_splits()
 
     # 1. External Flows (Portfolio Level)
@@ -360,7 +363,10 @@ def get_yearly_equity_curve() -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
                     h['qty'] += qty
         to_remove = [k for k, v in holdings.items() if abs(v['qty']) < 0.001]
         for k in to_remove: del holdings[k]
-        date_str = f"{year}-12-31"; fetch_list = list(holdings.keys())
+        # For current year, use today's date instead of Dec 31
+        today = datetime.now().strftime("%Y-%m-%d")
+        date_str = today if year == today[:4] else f"{year}-12-31"
+        fetch_list = list(holdings.keys())
         for s in list(holdings.keys()):
             if holdings[s]['curr'] != BASE_CURRENCY:
                 pair = f"{holdings[s]['curr']}{BASE_CURRENCY}=X"

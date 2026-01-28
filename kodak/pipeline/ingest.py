@@ -73,45 +73,59 @@ def run_ingestion():
         return
 
     # 3. Load Existing Hashes (Deduplication)
-    # We need to join with accounts/instruments to reconstruct the hash inputs if we stored them normalized
-    # Or simpler: Just check if 'external_id' exists if we trust the UUID generation (we don't, it's random).
-    # We need to hash the *content* of the new rows and compare with existing content.
-    
-    # Fetch relevant columns from existing transactions to build hash set
+    # Use ISIN instead of symbol for consistent matching (parser uses security name, DB uses ticker)
+    # Generate hashes with BOTH amount and amount_local to handle data inconsistencies
     existing_txns = execute_query('''
-        SELECT t.date, a.external_id as acc_ext, t.type, i.symbol, t.amount
+        SELECT t.date, a.external_id as acc_ext, t.type, i.isin, t.amount, t.amount_local
         FROM transactions t
         JOIN accounts a ON t.account_id = a.id
         LEFT JOIN instruments i ON t.instrument_id = i.id
     ''')
-    
+
     existing_hashes = set()
     for row in existing_txns:
-        h = generate_txn_hash(
-            row['date'], row['acc_ext'], row['type'], 
-            row['symbol'] if row['symbol'] else '', row['amount']
-        )
-        existing_hashes.add(h)
+        isin = row['isin'] if row['isin'] else ''
+        amt = row['amount']
+        amt_local = row['amount_local']
+        # Add hash with amount (for foreign dividends where parser lacks FX rate)
+        h1 = generate_txn_hash(row['date'], row['acc_ext'], row['type'], isin, amt)
+        existing_hashes.add(h1)
+        # Add hash with amount_local only if non-zero (avoids false matches)
+        if amt_local:
+            h2 = generate_txn_hash(row['date'], row['acc_ext'], row['type'], isin, amt_local)
+            existing_hashes.add(h2)
 
     # 4. Filter & Stage
     to_stage = []
-    skipped = 0
-    
+    skipped_existing = 0
+    skipped_batch = 0
+    batch_hashes = set()
+
     for item in all_rows:
-        h = generate_txn_hash(
-            item['date'], item['account_external_id'], item['type'],
-            item['symbol'], item['amount']
-        )
-        
-        if h in existing_hashes:
-            skipped += 1
+        isin = item['isin'] if item['isin'] else ''
+        amt = item['amount']
+        amt_local = item['amount_local']
+
+        # Check both amount and amount_local hashes against existing DB records
+        h1 = generate_txn_hash(item['date'], item['account_external_id'], item['type'], isin, amt)
+        h2 = generate_txn_hash(item['date'], item['account_external_id'], item['type'], isin, amt_local) if amt_local else None
+
+        if h1 in existing_hashes or (h2 and h2 in existing_hashes):
+            skipped_existing += 1
             continue
-            
-        item['hash'] = h
+
+        # For batch deduplication, only use amount hash (amount_local=0 causes false positives)
+        if h1 in batch_hashes:
+            skipped_batch += 1
+            continue
+
+        batch_hashes.add(h1)
+
+        item['hash'] = h1
         item['batch_id'] = batch_id
         to_stage.append(item)
 
-    logging.info(f"Staging {len(to_stage)} transactions (Skipped {skipped} duplicates).")
+    logging.info(f"Staging {len(to_stage)} transactions (Skipped {skipped_existing} existing, {skipped_batch} batch duplicates).")
     
     if not to_stage:
         return

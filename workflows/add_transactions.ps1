@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 Write-Host "--- Kodak Portfolio: Add Transactions ---" -ForegroundColor Cyan
 
 # 1. Ingest
-Write-Host "`n[1/5] Ingesting files from data/new_raw_transactions/{nordnet,saxo}..." -ForegroundColor Yellow
+Write-Host "`n[1/6] Ingesting files from data/new_raw_transactions/{nordnet,saxo}..." -ForegroundColor Yellow
 python -m kodak.pipeline.ingest
 
 # 2. Check Staging
@@ -16,24 +16,28 @@ if ($StagingCount -eq 0) {
     exit
 }
 
-Write-Host "`n[2/5] Found $StagingCount transactions in staging." -ForegroundColor Cyan
+Write-Host "`n[2/6] Found $StagingCount transactions in staging." -ForegroundColor Cyan
 $confirmation = Read-Host "Do you want to review and COMMIT these transactions now? (y/n)"
 
 if ($confirmation -eq 'y') {
     # 3. Commit
     python -m kodak.pipeline.review_commit
-    
+
     # 4. Map & Enrich
-    Write-Host "`n[3/5] Updating ISIN and Account Maps..." -ForegroundColor Yellow
+    Write-Host "`n[3/6] Updating ISIN and Account Maps..." -ForegroundColor Yellow
     python -m kodak.pipeline.map_accounts
     python -m kodak.pipeline.map_isins
-    
-    Write-Host "`n[4/5] Fetching Latest Market Prices..." -ForegroundColor Yellow
+
+    Write-Host "`n[4/6] Fetching Latest Market Prices..." -ForegroundColor Yellow
     python -m kodak.pipeline.fetch_prices
-    
-    Write-Host "`n[5/5] Enriching Historical FX Rates..." -ForegroundColor Yellow
+
+    Write-Host "`n[5/6] Enriching Historical FX Rates..." -ForegroundColor Yellow
     python -m kodak.pipeline.enrich_fx
-    
+
+    Write-Host "`n[6/6] Exporting performance and holdings data..." -ForegroundColor Yellow
+    python -m kodak.cli.performance_report --json data/performance.json
+    python -m kodak.cli.analyze_portfolio --json data/holdings.json
+
     Write-Host "`n[SUCCESS] Portfolio updated successfully!" -ForegroundColor Green
 } else {
     Write-Host "`n[ABORTED] Transactions remain in staging. Run 'python -m kodak.pipeline.review_commit' later." -ForegroundColor Red

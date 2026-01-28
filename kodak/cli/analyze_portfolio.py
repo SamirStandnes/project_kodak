@@ -1,3 +1,5 @@
+import argparse
+import json
 import pandas as pd
 from kodak.shared.db import get_connection, execute_query
 from kodak.shared.market_data import get_latest_prices, get_exchange_rate
@@ -10,43 +12,33 @@ from rich.table import Table
 config = load_config()
 BASE_CURRENCY = config.get('base_currency', 'NOK')
 
-def analyze_portfolio():
-    conn = get_connection()
-    console = Console()
-    
-    # 1. Get Current Holdings
-    # ... (rest of the file)
+
+def get_portfolio_data():
+    """Get portfolio data for display or export."""
     df_holdings = get_holdings()
     if df_holdings.empty:
-        console.print("[yellow]No holdings found.[/yellow]")
-        return
+        return None, None
 
-    # 2. Get Latest Prices & Currencies
-    # We need to know the currency of the instrument to fetch the right FX rate
-    # For now, we assume the instrument's currency in the DB is correct, or we infer it.
-    
+    # Get Latest Prices & Currencies
     price_rows = execute_query('''
         SELECT mp.instrument_id, mp.close, i.currency
         FROM market_prices mp
         JOIN instruments i ON mp.instrument_id = i.id
         WHERE (mp.instrument_id, mp.date) IN (
-            SELECT instrument_id, MAX(date) 
-            FROM market_prices 
+            SELECT instrument_id, MAX(date)
+            FROM market_prices
             GROUP BY instrument_id
         )
     ''')
-    
-    price_map = {} # inst_id -> {price, currency}
+
+    price_map = {}
     for row in price_rows:
         price_map[row['instrument_id']] = {
             'price': row['close'],
             'currency': row['currency']
         }
 
-    # Cache FX rates to avoid spamming Yahoo
     fx_cache = {}
-
-    # 3. Enrich Holdings with Valuation
     portfolio_data = []
     total_market_value = 0
     total_cost_basis = 0
@@ -54,7 +46,7 @@ def analyze_portfolio():
     for _, row in df_holdings.iterrows():
         inst_id = row['instrument_id']
         market_data = price_map.get(inst_id)
-        
+
         if not market_data:
             price_nok = 0
             price_raw = 0
@@ -62,40 +54,118 @@ def analyze_portfolio():
         else:
             price_raw = market_data['price']
             curr = market_data['currency']
-            
-        # Convert to Base Currency
+
         if curr == BASE_CURRENCY:
             price_nok = price_raw
-            rate = 1.0
         else:
             if curr not in fx_cache:
                 fx_cache[curr] = get_exchange_rate(curr, BASE_CURRENCY)
-            rate = fx_cache[curr]
-            price_nok = price_raw * rate
+            price_nok = price_raw * fx_cache[curr]
 
         market_value = row['quantity'] * price_nok
         cost_basis = row['cost_basis_local']
-        
         gain_loss = market_value - cost_basis
         return_pct = (market_value / cost_basis - 1) * 100 if cost_basis > 0 else 0
 
         portfolio_data.append({
-            'Symbol': row['symbol'] or row['isin'],
-            'Qty': row['quantity'],
-            'Avg Cost': cost_basis / row['quantity'],
-            'Price': price_raw,
-            'Currency': curr,
-            'Market Value': market_value,
-            'Gain/Loss': gain_loss,
-            'Return %': return_pct
+            'symbol': row['symbol'] or row['isin'],
+            'quantity': row['quantity'],
+            'avg_cost': cost_basis / row['quantity'] if row['quantity'] > 0 else 0,
+            'price': price_raw,
+            'currency': curr,
+            'market_value': market_value,
+            'gain_loss': gain_loss,
+            'return_pct': return_pct
         })
-        
+
         total_market_value += market_value
         total_cost_basis += cost_basis
 
-    df_report = pd.DataFrame(portfolio_data).sort_values('Market Value', ascending=False)
+    # Calculate weight percentages
+    for item in portfolio_data:
+        item['weight_pct'] = (item['market_value'] / total_market_value * 100) if total_market_value > 0 else 0
 
-    # 4. Render Table
+    # Calculate cash balance
+    cash_rows = pd.read_sql("SELECT currency, SUM(amount) as total FROM transactions GROUP BY currency", get_connection())
+    cash_balance_nok = 0.0
+    for _, row in cash_rows.iterrows():
+        curr = row['currency']
+        amt = row['total']
+        if curr == BASE_CURRENCY:
+            cash_balance_nok += amt
+        else:
+            if curr not in fx_cache:
+                fx_cache[curr] = get_exchange_rate(curr, BASE_CURRENCY)
+            cash_balance_nok += amt * fx_cache[curr]
+
+    summary = {
+        'total_market_value': total_market_value,
+        'total_cost_basis': total_cost_basis,
+        'total_gain_loss': total_market_value - total_cost_basis,
+        'cash_balance': cash_balance_nok,
+        'net_worth': total_market_value + cash_balance_nok
+    }
+
+    return portfolio_data, summary
+
+
+def export_holdings_json(output_path: str) -> None:
+    """Export holdings data to JSON for external projects (e.g., oceanview)."""
+    portfolio_data, summary = get_portfolio_data()
+
+    if portfolio_data is None:
+        print("No holdings found.")
+        return
+
+    # Sort by market value descending
+    portfolio_data.sort(key=lambda x: x['market_value'], reverse=True)
+
+    holdings = [
+        {
+            'symbol': h['symbol'],
+            'quantity': round(h['quantity'], 2),
+            'cost_basis': round(h['quantity'] * h['avg_cost'], 0),
+            'market_value': round(h['market_value'], 0),
+            'weight_pct': round(h['weight_pct'], 1),
+            'return_pct': round(h['return_pct'], 1)
+        }
+        for h in portfolio_data
+    ]
+
+    output = {
+        'holdings': holdings,
+        'total_market_value': round(summary['total_market_value'], 0),
+        'total_cost_basis': round(summary['total_cost_basis'], 0),
+        'cash_balance': round(summary['cash_balance'], 0),
+        'net_worth': round(summary['net_worth'], 0)
+    }
+
+    with open(output_path, 'w') as f:
+        json.dump(output, f, indent=2)
+
+    print(f"Holdings data exported to: {output_path}")
+
+
+def analyze_portfolio():
+    parser = argparse.ArgumentParser(description="Kodak Portfolio Analysis")
+    parser.add_argument("--json", metavar="FILE", help="Export holdings data to JSON file")
+    args = parser.parse_args()
+
+    if args.json:
+        export_holdings_json(args.json)
+        return
+
+    console = Console()
+
+    portfolio_data, summary = get_portfolio_data()
+    if portfolio_data is None:
+        console.print("[yellow]No holdings found.[/yellow]")
+        return
+
+    # Sort by market value descending
+    portfolio_data.sort(key=lambda x: x['market_value'], reverse=True)
+
+    # Render Table
     table = Table(show_header=True, header_style="bold magenta")
     table.add_column("Symbol")
     table.add_column("Qty", justify="right")
@@ -106,68 +176,44 @@ def analyze_portfolio():
     table.add_column("Gain/Loss", justify="right")
     table.add_column("Return %", justify="right")
 
-    for _, row in df_report.iterrows():
-        gl_style = "green" if row['Gain/Loss'] >= 0 else "red"
-        
-        # Format weird returns
-        ret_str = f"{row['Return %']:.2f}%"
-        if row['Return %'] < -99: ret_str = "-100%"
-        
+    for row in portfolio_data:
+        gl_style = "green" if row['gain_loss'] >= 0 else "red"
+        ret_str = f"{row['return_pct']:.2f}%"
+        if row['return_pct'] < -99:
+            ret_str = "-100%"
+
         table.add_row(
-            row['Symbol'],
-            f"{row['Qty']:,.2f}",
-            f"{row['Avg Cost']:,.2f}",
-            f"{row['Price']:,.2f}",
-            row['Currency'],
-            f"{row['Market Value']:,.0f}",
-            f"[{gl_style}]{row['Gain/Loss']:,.0f}[/{gl_style}]",
+            row['symbol'],
+            f"{row['quantity']:,.2f}",
+            f"{row['avg_cost']:,.2f}",
+            f"{row['price']:,.2f}",
+            row['currency'],
+            f"{row['market_value']:,.0f}",
+            f"[{gl_style}]{row['gain_loss']:,.0f}[/{gl_style}]",
             f"[{gl_style}]{ret_str}[/{gl_style}]"
         )
 
     console.print(table)
 
-    # 5. Summary Metrics
-    total_gl = total_market_value - total_cost_basis
-    total_return = (total_market_value / total_cost_basis - 1) * 100 if total_cost_basis > 0 else 0
-    
-    # Calculate Cash Balance properly (Multi-currency)
-    cash_by_currency = execute_query("SELECT currency, SUM(amount) as total FROM transactions GROUP BY currency")
-    cash_balance_nok = 0.0
-    # ... (existing query logic) ...
-    for _, row in cash_rows.iterrows():
-        curr = row['currency']
-        amt = row['total']
-        
-        if curr == BASE_CURRENCY:
-            cash_balance_nok += amt
-        else:
-            if curr not in fx_cache:
-                fx_cache[curr] = get_exchange_rate(curr, BASE_CURRENCY)
-            rate = fx_cache[curr]
-            cash_balance_nok += amt * rate
-
-    # Calculate Totals for Dividends, Fees, Interest
+    # Summary Metrics
     income = get_income_and_costs()
-
-    total_dividends = income['dividends']
-    total_fees = income['fees']
-    total_interest = income['interest']
+    total_gl = summary['total_gain_loss']
 
     summary_table = Table(show_header=False, box=None)
-    summary_table.add_row("Total Market Value", f"{total_market_value:,.0f} {BASE_CURRENCY}")
-    summary_table.add_row("Total Cost Basis", f"{total_cost_basis:,.0f} {BASE_CURRENCY}")
-    
+    summary_table.add_row("Total Market Value", f"{summary['total_market_value']:,.0f} {BASE_CURRENCY}")
+    summary_table.add_row("Total Cost Basis", f"{summary['total_cost_basis']:,.0f} {BASE_CURRENCY}")
+
     gl_color = "green" if total_gl >= 0 else "red"
     summary_table.add_row("Total Gain/Loss", f"[{gl_color}]{total_gl:,.0f} {BASE_CURRENCY}[/{gl_color}]")
-    
-    summary_table.add_row("Estimated Cash", f"{cash_balance_nok:,.0f} {BASE_CURRENCY}")
-    summary_table.add_row("Total Net Worth", f"{(total_market_value + cash_balance_nok):,.0f} {BASE_CURRENCY}")
-    
+
+    summary_table.add_row("Estimated Cash", f"{summary['cash_balance']:,.0f} {BASE_CURRENCY}")
+    summary_table.add_row("Total Net Worth", f"{summary['net_worth']:,.0f} {BASE_CURRENCY}")
+
     summary_table.add_section()
-    summary_table.add_row("Total Dividends", f"[green]{total_dividends:,.0f} {BASE_CURRENCY}[/green]")
-    summary_table.add_row("Total Interest", f"{total_interest:,.0f} {BASE_CURRENCY}")
-    summary_table.add_row("Total Fees", f"[red]{total_fees:,.0f} {BASE_CURRENCY}[/red]")
-    
+    summary_table.add_row("Total Dividends", f"[green]{income['dividends']:,.0f} {BASE_CURRENCY}[/green]")
+    summary_table.add_row("Total Interest", f"{income['interest']:,.0f} {BASE_CURRENCY}")
+    summary_table.add_row("Total Fees", f"[red]{income['fees']:,.0f} {BASE_CURRENCY}[/red]")
+
     console.print("\n[bold]Summary Statistics[/bold]")
     console.print(summary_table)
 
