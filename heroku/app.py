@@ -822,6 +822,21 @@ if check_password():
                     df_contrib['Dividends'] = df_contrib['Dividends'].round(0)
                     df_contrib['Profit'] = df_contrib['Profit'].round(0)
 
+                    # Treemap of Contribution
+                    df_tree = df_contrib[abs(df_contrib['Contribution %']) > 0.05].copy()
+                    df_tree['Positive'] = df_tree['Contribution %'] > 0
+
+                    fig_tree = px.treemap(
+                        df_tree,
+                        path=['Symbol'],
+                        values=abs(df_tree['Contribution %']),
+                        color='Contribution %',
+                        color_continuous_scale='RdBu',
+                        color_continuous_midpoint=0,
+                        title=f"Performance Contribution Breakdown ({selected_year})"
+                    )
+                    st.plotly_chart(fig_tree, use_container_width=True)
+
                     st.dataframe(
                         df_contrib,
                         column_config={
